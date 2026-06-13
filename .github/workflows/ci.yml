@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Format check (black)
+        run: black --check .
+
+      - name: Type check (mypy)
+        run: mypy shared/ tools/ webhook/ agents/ --ignore-missing-imports
+
+      - name: Unit tests
+        run: pytest tests/ -q
+        env:
+          # Minimal env so shared/ imports work without real credentials
+          FEATHERLESS_BASE_URL: https://api.featherless.ai/v1
+          FEATHERLESS_API_KEY: test
+          AIMLAPI_BASE_URL: https://api.aimlapi.com/v1
+          AIMLAPI_API_KEY: test
+          SCAN_AGENT_ID: test
+          SCAN_AGENT_API_KEY: test
+          SECURITY_AGENT_ID: test
+          SECURITY_AGENT_API_KEY: test
+          RISK_AGENT_ID: test
+          RISK_AGENT_API_KEY: test
+          DEPLOY_AGENT_ID: test
+          DEPLOY_AGENT_API_KEY: test
+          REPORT_AGENT_ID: test
+          REPORT_AGENT_API_KEY: test
+          GITHUB_TOKEN: test
+          TARGET_REPO: owner/repo
+          GITHUB_WEBHOOK_SECRET: test-secret
+          BAND_SERVICE_API_KEY: test
+          BAND_REST_URL: https://api.band.ai
+
+      - name: Docker build check
+        run: docker build -t deployguard:ci .
