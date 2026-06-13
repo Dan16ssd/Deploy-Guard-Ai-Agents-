@@ -4,6 +4,8 @@ _Last updated: 2026-06-13_
 
 Progress log for the DeployGuard build. See [PLAN.md](PLAN.md) for the full plan.
 
+**Repo:** https://github.com/Dan16ssd/Deploy-Guard-Ai-Agents- (Phase 0 pushed to `main`).
+
 ## ✅ Done (Phase 0 — bootstrap + shared foundation)
 
 **Repo & config**
