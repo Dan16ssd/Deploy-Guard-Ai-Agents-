@@ -8,6 +8,7 @@ messages (Band may redeliver, and agents shouldn't double-act).
 In-memory by default (sufficient for a single-process agent or the demo). Swap the
 backing dict for Redis if agents are scaled horizontally.
 """
+
 from __future__ import annotations
 
 import threading

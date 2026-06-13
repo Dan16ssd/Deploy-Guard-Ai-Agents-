@@ -1,4 +1,5 @@
 """Verdict and severity vocabularies shared across the agent chain."""
+
 from __future__ import annotations
 
 from enum import Enum

@@ -29,6 +29,10 @@ Progress log for the DeployGuard build. See [PLAN.md](PLAN.md) for the full plan
 **Spikes**
 - `spike/spike_a_echo_agent.py` — single-agent connectivity check (gates everything; run once credentials exist).
 
+**Version control / CI**
+- Pushed to GitHub; `.gitattributes` (LF normalization), `pyproject.toml` (ruff + black + pytest config).
+- GitHub Actions: `.github/workflows/ci.yml` (ruff + black + pytest on every push/PR) and `deploy.yml` (CI gate → Railway deploy, skipped until `RAILWAY_TOKEN` is set; also `workflow_dispatch`-callable). Code is ruff-clean + black-formatted.
+
 ## ⏳ Blocked on credentials (need accounts — "nothing set up yet")
 - Register 5 agents at app.band.ai → fill `*_AGENT_ID` / `*_AGENT_API_KEY` in `.env`.
 - Featherless (and/or AI/ML API) key → `.env`.

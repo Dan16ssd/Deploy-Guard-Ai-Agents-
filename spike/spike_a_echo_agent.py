@@ -13,6 +13,7 @@ If this hangs or errors, fix connectivity/credentials/model before building agen
 Also use this to confirm Spike B: does LangGraphAdapter actually accept
 `tools=` and `system_prompt=`? Adjust shared/agent_runner.build_adapter if not.
 """
+
 from __future__ import annotations
 
 from dotenv import load_dotenv
@@ -46,8 +47,9 @@ def _build_tools() -> list:
 def main() -> None:
     load_dotenv()
     # Imported here so the module is importable even before deps are installed.
-    from shared.agent_runner import run_agent
     import asyncio
+
+    from shared.agent_runner import run_agent
 
     asyncio.run(run_agent("scan", SYSTEM_PROMPT, _build_tools()))
 

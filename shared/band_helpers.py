@@ -4,6 +4,7 @@ Agents pass structured payloads to each other by embedding a fenced JSON block i
 the message body. These helpers extract @mentions, pull the JSON back out, and
 detect human decision keywords (APPROVE/REJECT/OVERRIDE/FIX).
 """
+
 from __future__ import annotations
 
 import json

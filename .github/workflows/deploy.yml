@@ -1,0 +1,37 @@
+name: Deploy
+
+# Runs on merge to main, and is callable via workflow_dispatch (this is the event
+# DeployGuard's DeployAgent fires on the *target* repo; here it deploys DeployGuard
+# itself to Railway). Deploy steps are skipped unless RAILWAY_TOKEN is configured.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Why this deploy was triggered (DeployAgent passes the PR ref)"
+        required: false
+        default: "manual"
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    needs: ci
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to Railway
+        if: ${{ secrets.RAILWAY_TOKEN != '' }}
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          npm i -g @railway/cli
+          railway up --service deployguard --ci
+
+      - name: Skip notice
+        if: ${{ secrets.RAILWAY_TOKEN == '' }}
+        run: echo "RAILWAY_TOKEN not set — skipping deploy (CI-only run)."

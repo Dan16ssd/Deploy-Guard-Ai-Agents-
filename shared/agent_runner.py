@@ -9,6 +9,7 @@ a system prompt is unverified against band-sdk 1.0.0 (docs are gated). The call 
 reflects the assumed API; `build_adapter` is isolated so that, once Spike B confirms
 the real signature, this is the only function that changes.
 """
+
 from __future__ import annotations
 
 import asyncio

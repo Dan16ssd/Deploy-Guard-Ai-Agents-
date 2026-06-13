@@ -4,6 +4,7 @@ Each agent emits a structured block (serialized into its @mention message) that 
 next agent parses back out. Keeping these as models gives us validation + a single
 source of truth for the audit trail ReportAgent reconstructs.
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timezone

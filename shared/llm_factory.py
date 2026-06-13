@@ -4,6 +4,7 @@ Both Featherless and AI/ML API expose OpenAI-compatible endpoints, so a single
 `ChatOpenAI` pointed at the right base_url/api_key covers every agent. Swapping a
 model or provider is a config edit — no code change.
 """
+
 from __future__ import annotations
 
 import os
