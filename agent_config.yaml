@@ -1,0 +1,45 @@
+# Per-agent configuration: which Band identity, which open-source model, which provider.
+# Model assignment follows the blueprint; provider is OpenAI-compatible (featherless | aimlapi).
+# llm_factory.py reads this + .env to build each agent's ChatOpenAI client.
+
+defaults:
+  provider: featherless
+  temperature: 0.1
+  max_tokens: 2048
+  request_timeout: 120
+
+agents:
+  scan:
+    id_env: SCAN_AGENT_ID
+    key_env: SCAN_AGENT_API_KEY
+    provider: featherless
+    model: Qwen/Qwen3-Coder-30B-A3B-Instruct   # fast tool-calling, first in chain
+  security:
+    id_env: SECURITY_AGENT_ID
+    key_env: SECURITY_AGENT_API_KEY
+    provider: featherless
+    model: Qwen/Qwen3-Coder-480B-A35B-Instruct  # deep code reasoning, 256K ctx
+  risk:
+    id_env: RISK_AGENT_ID
+    key_env: RISK_AGENT_API_KEY
+    provider: featherless
+    model: Qwen/Qwen3-235B-A22B                  # judgment / synthesis
+  deploy:
+    id_env: DEPLOY_AGENT_ID
+    key_env: DEPLOY_AGENT_API_KEY
+    provider: featherless
+    model: Qwen/Qwen3-8B                         # mechanical tool calling
+  report:
+    id_env: REPORT_AGENT_ID
+    key_env: REPORT_AGENT_API_KEY
+    provider: featherless
+    model: Qwen/Qwen3-30B-A3B                    # structured writing
+
+# Map provider name -> env vars holding base_url + api_key (resolved in llm_factory.py)
+providers:
+  featherless:
+    base_url_env: FEATHERLESS_BASE_URL
+    api_key_env: FEATHERLESS_API_KEY
+  aimlapi:
+    base_url_env: AIMLAPI_BASE_URL
+    api_key_env: AIMLAPI_API_KEY

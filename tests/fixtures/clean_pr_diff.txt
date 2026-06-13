@@ -1,0 +1,22 @@
+diff --git a/app/auth.py b/app/auth.py
+index 1a2b3c4..5d6e7f8 100644
+--- a/app/auth.py
++++ b/app/auth.py
+@@ -38,9 +38,15 @@ class AuthService:
+     def __init__(self, db):
+         self.db = db
+
+-    def get_user(self, user_id: int):
++    def get_user(self, user_id: int):
++        """Fetch a user by id using a parameterized query."""
+         cursor = self.db.cursor()
+         cursor.execute(
+             "SELECT id, email, role FROM users WHERE id = %s", (user_id,)
+         )
+         return cursor.fetchone()
++
++    def list_active_users(self):
++        """Return all active users, parameterized and read-only."""
++        cursor = self.db.cursor()
++        cursor.execute("SELECT id, email FROM users WHERE active = %s", (True,))
++        return cursor.fetchall()
