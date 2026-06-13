@@ -1,0 +1,38 @@
+version: "3.9"
+
+x-agent-base: &agent-base
+  build: .
+  env_file: .env
+  restart: unless-stopped
+
+services:
+  webhook:
+    <<: *agent-base
+    command: uvicorn webhook.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  scan-agent:
+    <<: *agent-base
+    command: python -m agents.scan_agent
+
+  security-agent:
+    <<: *agent-base
+    command: python -m agents.security_agent
+
+  risk-agent:
+    <<: *agent-base
+    command: python -m agents.risk_agent
+
+  deploy-agent:
+    <<: *agent-base
+    command: python -m agents.deploy_agent
+
+  report-agent:
+    <<: *agent-base
+    command: python -m agents.report_agent

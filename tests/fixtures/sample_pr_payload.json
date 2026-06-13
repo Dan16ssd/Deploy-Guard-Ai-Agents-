@@ -1,0 +1,19 @@
+{
+  "action": "opened",
+  "number": 42,
+  "pull_request": {
+    "number": 42,
+    "title": "Fix auth service SQL queries",
+    "user": {"login": "contributor"},
+    "base": {"ref": "main", "sha": "abc123"},
+    "head": {"ref": "fix/auth-sql", "sha": "def456"},
+    "diff_url": "https://github.com/owner/repo/pull/42.diff",
+    "additions": 24,
+    "deletions": 6
+  },
+  "repository": {
+    "full_name": "owner/repo",
+    "name": "repo"
+  },
+  "sender": {"login": "contributor"}
+}
