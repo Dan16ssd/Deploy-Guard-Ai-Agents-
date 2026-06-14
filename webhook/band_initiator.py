@@ -1,70 +1,98 @@
-"""Create a Band room for a PR and post the opening @ScanAgent message.
+"""Create a Band chat for a PR and post the opening @ScanAgent message.
 
-Spike C (unverified): exact Band REST endpoint paths and auth scheme TBD.
-The assumed API shape below is based on BAND_REST_URL + bearer token.
-Adjust _create_room / _post_message if Spike C reveals a different shape.
+Spike C (verified against thenvoi-client-rest 0.0.7 / band-sdk 1.0.0): the webhook
+acts as a Band *service agent*. Using the real generated REST client it:
+  1. creates a chat        -> agent_api_chats.create_agent_chat(ChatRoomRequest)
+  2. adds the chain agents -> agent_api_participants.add_agent_chat_participant(...)
+  3. posts the opener      -> agent_api_messages.create_agent_chat_message(
+                                 ChatMessageRequest(content, mentions=[...ScanAgent]))
+
+Participant-adding is best-effort: depending on Band's contact model it may require
+the service agent to already have the chain agents as peers. A failure there does not
+abort chat creation / the opening message.
 """
 
 from __future__ import annotations
 
 import os
 
-import httpx
+from band.client.rest import (
+    ChatMessageRequest,
+    ChatMessageRequestMentionsItem,
+    ChatRoomRequest,
+    ParticipantRequest,
+    RestClient,
+)
 
 from shared.band_helpers import format_payload
 from shared.context_schema import PRContext
 
+# (env var holding the Band agent id, display handle) for each chain agent.
+_AGENTS: list[tuple[str, str]] = [
+    ("SCAN_AGENT_ID", "ScanAgent"),
+    ("SECURITY_AGENT_ID", "SecurityAgent"),
+    ("RISK_AGENT_ID", "RiskAgent"),
+    ("DEPLOY_AGENT_ID", "DeployAgent"),
+    ("REPORT_AGENT_ID", "ReportAgent"),
+]
 
-def _headers() -> dict[str, str]:
+
+def _client() -> RestClient:
+    api_key = os.environ["BAND_SERVICE_API_KEY"]
+    base_url = os.environ.get("BAND_REST_URL", "https://app.band.ai").rstrip("/")
+    return RestClient(api_key=api_key, base_url=base_url)
+
+
+def _agent_ids() -> dict[str, str]:
+    """Resolve {handle: agent_id} for agents whose id is configured in env."""
     return {
-        "Authorization": f"Bearer {os.environ['BAND_SERVICE_API_KEY']}",
-        "Content-Type": "application/json",
+        handle: os.environ[env_name]
+        for env_name, handle in _AGENTS
+        if os.environ.get(env_name)
     }
 
 
-def _base() -> str:
-    return os.environ.get("BAND_REST_URL", "https://api.band.ai").rstrip("/")
-
-
-def _create_room(room_name: str) -> str:
-    """Create (or retrieve existing) Band room. Returns room_id."""
-    resp = httpx.post(
-        f"{_base()}/v1/rooms",
-        headers=_headers(),
-        json={"name": room_name},
-        timeout=15,
-    )
-    resp.raise_for_status()
-    data = resp.json()
-    # Spike C: adjust key name if different (e.g. "id", "room_id", "channel_id")
-    return data.get("room_id") or data.get("id") or data["channel_id"]
-
-
-def _post_message(room_id: str, content: str) -> None:
-    """Post a message to a Band room."""
-    resp = httpx.post(
-        f"{_base()}/v1/rooms/{room_id}/messages",
-        headers=_headers(),
-        json={"content": content},
-        timeout=15,
-    )
-    resp.raise_for_status()
-
-
 def initiate_chain(pr: PRContext) -> str:
-    """Create a PR room in Band and fire the opening @ScanAgent message.
+    """Create a Band chat for the PR and fire the opening @ScanAgent message.
 
-    Returns the room_id so the webhook response can log it.
+    Returns the chat id so the webhook response can log it.
     """
-    room_name = f"PR-{pr.pr_number}-deployguard"
-    room_id = _create_room(room_name)
+    client = _client()
+    ids = _agent_ids()
+
+    chat = client.agent_api_chats.create_agent_chat(
+        chat=ChatRoomRequest(task_id=f"PR-{pr.pr_number}-deployguard")
+    )
+    chat_id = chat.data.id
+
+    # Add every chain agent as a participant so @mentions reach them (best-effort).
+    for handle, agent_id in ids.items():
+        try:
+            client.agent_api_participants.add_agent_chat_participant(
+                chat_id,
+                participant=ParticipantRequest(participant_id=agent_id, role="member"),
+            )
+        except Exception as exc:  # noqa: BLE001 - resilience over strictness here
+            print(f"[band_initiator] could not add {handle} to chat {chat_id}: {exc}")
 
     engineer = os.environ.get("ENGINEER_HANDLE", "@engineer")
-    opening = (
-        f"@ScanAgent New PR #{pr.pr_number} by @{pr.author} targeting `{pr.base_branch}` "
-        f"— begin DeployGuard safety review.\n"
+    content = (
+        f"@ScanAgent New PR #{pr.pr_number} by @{pr.author} targeting "
+        f"`{pr.base_branch}` — begin DeployGuard safety review.\n"
         f"Engineer on-call: {engineer}\n"
         f"{format_payload(pr.model_dump())}"
     )
-    _post_message(room_id, opening)
-    return room_id
+
+    mentions: list[ChatMessageRequestMentionsItem] = []
+    if scan_id := ids.get("ScanAgent"):
+        mentions.append(
+            ChatMessageRequestMentionsItem(
+                id=scan_id, handle="ScanAgent", name="ScanAgent"
+            )
+        )
+
+    client.agent_api_messages.create_agent_chat_message(
+        chat_id,
+        message=ChatMessageRequest(content=content, mentions=mentions),
+    )
+    return chat_id

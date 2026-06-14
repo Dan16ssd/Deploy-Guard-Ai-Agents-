@@ -4,10 +4,9 @@ Each agents/*.py supplies only its identity key, system prompt, and tool list;
 this module wires the LangGraph adapter, the LLM (from llm_factory), and the Band
 connection, then runs the agent's WebSocket loop.
 
-NOTE (Spike B): the exact LangGraphAdapter signature for attaching custom tools and
-a system prompt is unverified against band-sdk 1.0.0 (docs are gated). The call below
-reflects the assumed API; `build_adapter` is isolated so that, once Spike B confirms
-the real signature, this is the only function that changes.
+Spike B (verified against band-sdk 1.0.0): the LangGraphAdapter takes the tool list
+as `additional_tools=` and the per-agent instructions as `custom_section=` (there is
+no `system_prompt=` arg). `build_adapter` is the single place this wiring lives.
 """
 
 from __future__ import annotations
@@ -27,8 +26,8 @@ def build_adapter(agent_key: str, system_prompt: str, tools: Sequence[Any]) -> A
     return LangGraphAdapter(
         llm=llm,
         checkpointer=InMemorySaver(),
-        tools=list(tools),
-        system_prompt=system_prompt,
+        additional_tools=list(tools),
+        custom_section=system_prompt,
     )
 
 

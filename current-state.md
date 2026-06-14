@@ -1,6 +1,6 @@
 # DeployGuard — Current State
 
-_Last updated: 2026-06-13_
+_Last updated: 2026-06-14_
 
 Progress log for the DeployGuard build. See [PLAN.md](PLAN.md) for the full plan.
 
@@ -76,6 +76,16 @@ Progress log for the DeployGuard build. See [PLAN.md](PLAN.md) for the full plan
 
 ---
 
+## ✅ Band SDK integration verified (deps installed; Spikes B & C resolved against the real SDK)
+`pip install -r requirements.txt` done — `band-sdk 1.0.0`, `thenvoi-client-rest 0.0.7`, `langgraph`, etc. installed. All 19 agent/tool/webhook modules import cleanly. Inspecting the installed SDK corrected two wrong assumptions:
+- **Spike B (fixed in `shared/agent_runner.py`):** `LangGraphAdapter` takes tools as **`additional_tools=`** and the per-agent prompt as **`custom_section=`** — there is no `system_prompt=`/`tools=` arg. Adapter now builds end-to-end with a Featherless-style `ChatOpenAI`.
+- **Spike C (rewrote `webhook/band_initiator.py`):** replaced guessed `httpx` calls to `/v1/rooms` with the real generated client: `RestClient(api_key, base_url)` → `agent_api_chats.create_agent_chat(ChatRoomRequest(task_id))` → add participants → `agent_api_messages.create_agent_chat_message(chat_id, ChatMessageRequest(content, mentions=[ScanAgent]))`. Verified by constructing all request objects (no network).
+- `.env.example` URLs corrected to the SDK defaults (`https://app.band.ai`, `wss://app.band.ai/api/v1/socket/websocket`).
+
+**Still unverifiable without live credentials:** whether Featherless serves the exact model IDs in `agent_config.yaml`, and whether participant-adding needs pre-existing Band contacts. Both surface on the first live **Spike A** run.
+
+---
+
 ## ⏳ Blocked on credentials (still needed)
 - Register 5 agents at app.band.ai → fill `*_AGENT_ID` / `*_AGENT_API_KEY` in `.env`.
 - Featherless API key → `FEATHERLESS_API_KEY` in `.env`.
@@ -87,23 +97,22 @@ Progress log for the DeployGuard build. See [PLAN.md](PLAN.md) for the full plan
 
 ## 🔜 Next up (in order)
 
-1. **Fill `.env`** with real credentials (Band + Featherless + GitHub PAT).
-2. **Run Spike A** (`python -m spike.spike_a_echo_agent`) — confirms Band WebSocket + LLM tool-calling work.
-3. **Spike B** — confirm `LangGraphAdapter(tools=[...], system_prompt=...)` signature in `agent_runner.build_adapter`.
-4. **Spike C** — confirm Band REST room-creation + message-post endpoints; adjust `webhook/band_initiator.py` if needed.
-5. **ngrok** (`ngrok http 8000`) + register GitHub webhook on target repo.
-6. **E2E test** — open a PR with `vuln_pr_diff.txt` content → watch Band room light up → confirm CRIT block.
-7. **Railway deploy** — 6 services live, `GET /health` 200.
-8. **Demo video + slides** — record 5-min demo, export PDF.
-9. **Submit** on lablab.ai (repo, video, slides, live URL) by Jun 19.
+1. **Fill `.env`** with real credentials (Band + Featherless + GitHub PAT). _(Owner: you.)_
+2. **Run Spike A** (`python -m spike.spike_a_echo_agent`) — the make-or-break live test: confirms Band WebSocket + Featherless tool-calling. (Adapter wiring already verified offline.)
+3. **ngrok** (`ngrok http 8000`) + register GitHub webhook on target repo.
+4. **E2E test** — open a PR with `vuln_pr_diff.txt` content → watch Band chat light up → confirm CRIT block.
+5. **Railway deploy** — 6 services live, `GET /health` 200.
+6. **Demo video + slides** — record 5-min demo, export PDF.
+7. **Submit** on lablab.ai (repo, video, slides, live URL) by Jun 19.
 
 ---
 
-## ⚠️ Open verification items (carry into spikes)
+## ⚠️ Open verification items (need live credentials)
 
-- Exact `band-sdk` `LangGraphAdapter` signature for `tools=` and `system_prompt=` → may require adjusting `shared/agent_runner.build_adapter`.
-- Band REST endpoints for room creation + message posting (`webhook/band_initiator.py` marked with `# Spike C`).
-- Confirm `ChatOpenAI(base_url=...)` works for Featherless; verify exact model IDs are live on Featherless.
+- Verify the exact Qwen model IDs in `agent_config.yaml` are served by Featherless (swap per-agent in config if not).
+- Confirm participant-adding in `band_initiator` doesn't require pre-existing Band contacts between the service agent and the chain agents.
+- ~~`LangGraphAdapter` signature~~ — resolved (Spike B).
+- ~~Band REST room-creation/message endpoints~~ — resolved (Spike C).
 
 ---
 
