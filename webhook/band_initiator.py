@@ -60,9 +60,9 @@ def initiate_chain(pr: PRContext) -> str:
     client = _client()
     ids = _agent_ids()
 
-    chat = client.agent_api_chats.create_agent_chat(
-        chat=ChatRoomRequest(task_id=f"PR-{pr.pr_number}-deployguard")
-    )
+    # task_id, if provided, must be a UUID — we don't have one per PR, so omit it.
+    # The PR identity lives in the opening message content below.
+    chat = client.agent_api_chats.create_agent_chat(chat=ChatRoomRequest())
     chat_id = chat.data.id
 
     # Add every chain agent as a participant so @mentions reach them (best-effort).
@@ -74,6 +74,25 @@ def initiate_chain(pr: PRContext) -> str:
             )
         except Exception as exc:  # noqa: BLE001 - resilience over strictness here
             print(f"[band_initiator] could not add {handle} to chat {chat_id}: {exc}")
+
+    # Add the on-call engineer (a human User) so BLOCK/ESCALATE @mentions reach them.
+    # Resolve their participant id by handle from the service identity's peer list so we
+    # don't hard-code a user id. ENGINEER_HANDLE is like "@danny.ssd7".
+    eng_username = os.environ.get("ENGINEER_HANDLE", "").lstrip("@")
+    if eng_username:
+        try:
+            peers = client.agent_api_peers.list_agent_peers()
+            for peer in getattr(peers, "data", []) or []:
+                if getattr(peer, "handle", None) == eng_username:
+                    client.agent_api_participants.add_agent_chat_participant(
+                        chat_id,
+                        participant=ParticipantRequest(
+                            participant_id=peer.id, role="member"
+                        ),
+                    )
+                    break
+        except Exception as exc:  # noqa: BLE001 - resilience over strictness here
+            print(f"[band_initiator] could not add engineer {eng_username}: {exc}")
 
     engineer = os.environ.get("ENGINEER_HANDLE", "@engineer")
     content = (

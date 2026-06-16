@@ -8,6 +8,18 @@ import time
 from langchain_core.tools import tool
 
 
+def _normalize_repo(value: str) -> str:
+    """Accept 'owner/repo' or a full GitHub URL and return 'owner/repo'."""
+    v = (value or "").strip().rstrip("/")
+    for prefix in ("https://github.com/", "http://github.com/", "git@github.com:"):
+        if v.startswith(prefix):
+            v = v[len(prefix) :]
+            break
+    if v.endswith(".git"):
+        v = v[: -len(".git")]
+    return v
+
+
 @tool
 def trigger_deployment(
     ref: str = "main",
@@ -21,7 +33,7 @@ def trigger_deployment(
     from github import Github, GithubException
 
     token = os.environ["GITHUB_TOKEN"]
-    target_repo = repo or os.environ["TARGET_REPO"]
+    target_repo = _normalize_repo(repo or os.environ["TARGET_REPO"])
     wf_file = workflow_file or os.environ.get("DEPLOY_WORKFLOW_FILE", "deploy.yml")
 
     g = Github(token)

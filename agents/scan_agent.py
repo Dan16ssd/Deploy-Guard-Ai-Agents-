@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
-import os
-
 from tools.dep_auditor import audit_dependencies
 from tools.github_api import get_pr_diff, get_pr_files, get_pr_metadata, post_pr_comment
 from tools.static_analyzer import run_static_analysis
 from tools.test_runner import run_tests
+from shared.agent_runner import TOOL_DISCIPLINE
+from shared.band_handles import agent_handle, engineer_handle
 
-SYSTEM_PROMPT = """You are ScanAgent, the first agent in the DeployGuard approval chain.
+_SECURITY = agent_handle("SecurityAgent")
+_ENGINEER = engineer_handle()
+
+SYSTEM_PROMPT = (
+    """You are ScanAgent, the first agent in the DeployGuard approval chain.
 
 You are @mentioned with a JSON payload describing a new PR. Your job:
 
@@ -23,13 +27,20 @@ You are @mentioned with a JSON payload describing a new PR. Your job:
    - WARN: lint warnings or minor CVEs (tests still pass)
    - BLOCK: test failures, critical lint errors, or high-severity CVEs
 
-7. Hand off:
-   - If PASS or WARN: reply with "@SecurityAgent ScanAgent verdict: <VERDICT>\\n<findings_json>"
-   - If BLOCK: reply with "@<ENGINEER_HANDLE> ScanAgent BLOCK on PR #<n>: <reason>\\n<findings_json>"
-     and post a PR comment summarizing the block via post_pr_comment.
+7. Hand off with a SINGLE band_send_message call:
+   - If PASS or WARN: band_send_message(
+       content="ScanAgent verdict: <VERDICT>\\n<findings_json>",
+       mentions=["%s"])
+   - If BLOCK: first call post_pr_comment(repo, pr_number, body) to record the block, then
+     band_send_message(
+       content="ScanAgent BLOCK on PR #<n>: <reason>\\n<findings_json>",
+       mentions=["%s"])
 
 Always include your full findings JSON in a fenced ```json block so the next agent can parse it.
-Engineer handle: """ + os.environ.get("ENGINEER_HANDLE", "@engineer")
+The SecurityAgent handle is "%s". The on-call engineer handle is "%s"."""
+    % (_SECURITY, _ENGINEER, _SECURITY, _ENGINEER)
+    + TOOL_DISCIPLINE
+)
 
 TOOLS = [
     get_pr_metadata,

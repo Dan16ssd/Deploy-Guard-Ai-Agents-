@@ -64,4 +64,12 @@ def build_llm(agent_key: str) -> Any:
         temperature=spec.get("temperature", defaults.get("temperature", 0.1)),
         max_tokens=spec.get("max_tokens", defaults.get("max_tokens", 2048)),
         timeout=spec.get("request_timeout", defaults.get("request_timeout", 120)),
+        # The Featherless plan has a small concurrent-unit budget; sequential chain steps can
+        # briefly collide (or overlap with backlog) and return 429. Let the OpenAI client ride
+        # those out with exponential backoff instead of failing the agent's message.
+        max_retries=spec.get("max_retries", defaults.get("max_retries", 6)),
+        # Qwen3 hybrid models default to "thinking" mode and emit <think>…</think>
+        # in the message body. Agents post to a shared Band room, so disable it for
+        # clean verdicts/hand-offs. Non-hybrid (Coder/Instruct) models ignore it.
+        extra_body={"chat_template_kwargs": {"enable_thinking": False}},
     )

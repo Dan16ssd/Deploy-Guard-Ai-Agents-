@@ -28,33 +28,29 @@ def run_static_analysis(diff: str) -> dict:
         for filename, content in added_files.items():
             if not filename.endswith(".py"):
                 continue
-            fpath = Path(tmpdir) / Path(filename).name
-            fpath.write_text(content, encoding="utf-8")
-            result = subprocess.run(
-                ["ruff", "check", "--output-format=json", str(fpath)],
-                capture_output=True,
-                text=True,
-            )
-            if result.stdout.strip():
-                try:
-                    issues = json.loads(result.stdout)
-                except json.JSONDecodeError:
-                    issues = []
-                for issue in issues:
-                    sev = (
-                        Severity.HIGH
-                        if issue.get("code", "").startswith("E")
-                        else Severity.LOW
+            try:
+                fpath = Path(tmpdir) / Path(filename).name
+                fpath.write_text(content, encoding="utf-8")
+                result = subprocess.run(
+                    ["ruff", "check", "--output-format=json", str(fpath)],
+                    capture_output=True,
+                    text=True,
+                )
+                issues = json.loads(result.stdout) if result.stdout.strip() else []
+            except Exception:  # noqa: BLE001 - ruff missing/erroring must not crash the agent
+                continue
+            for issue in issues:
+                code = issue.get("code") or ""
+                sev = Severity.HIGH if code.startswith("E") else Severity.LOW
+                findings.append(
+                    Finding(
+                        file=filename,
+                        line=(issue.get("location") or {}).get("row"),
+                        rule=code,
+                        message=issue.get("message", ""),
+                        severity=sev,
                     )
-                    findings.append(
-                        Finding(
-                            file=filename,
-                            line=issue.get("location", {}).get("row"),
-                            rule=issue.get("code", ""),
-                            message=issue.get("message", ""),
-                            severity=sev,
-                        )
-                    )
+                )
 
     errors = sum(1 for f in findings if f.severity in (Severity.HIGH, Severity.CRIT))
     warnings = len(findings) - errors

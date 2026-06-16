@@ -18,12 +18,17 @@ agents:
     id_env: SECURITY_AGENT_ID
     key_env: SECURITY_AGENT_API_KEY
     provider: featherless
-    model: Qwen/Qwen3-Coder-480B-A35B-Instruct  # deep code reasoning, 256K ctx
+    # Was Qwen3-Coder-480B (4 concurrency units = the entire feather_pro_plus plan,
+    # which 429'd whenever any other agent was mid-call). The security regex/OWASP work
+    # lives in the security_scanner tool, so a 30B coder is plenty for orchestration.
+    model: Qwen/Qwen3-Coder-30B-A3B-Instruct  # deep code reasoning, low concurrency cost
   risk:
     id_env: RISK_AGENT_ID
     key_env: RISK_AGENT_API_KEY
     provider: featherless
-    model: Qwen/Qwen3-235B-A22B                  # judgment / synthesis
+    # Was Qwen3-235B (high concurrency-unit cost that 429'd under the small Featherless plan).
+    # The 0–100 risk math lives in the calculate_risk_score tool; the LLM only orchestrates.
+    model: Qwen/Qwen3-30B-A3B-Instruct-2507      # judgment / synthesis, low concurrency cost
   deploy:
     id_env: DEPLOY_AGENT_ID
     key_env: DEPLOY_AGENT_API_KEY
@@ -33,7 +38,7 @@ agents:
     id_env: REPORT_AGENT_ID
     key_env: REPORT_AGENT_API_KEY
     provider: featherless
-    model: Qwen/Qwen3-30B-A3B                    # structured writing
+    model: Qwen/Qwen3-30B-A3B-Instruct-2507      # structured writing (verified on Featherless)
 
 # Map provider name -> env vars holding base_url + api_key (resolved in llm_factory.py)
 providers:
