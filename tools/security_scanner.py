@@ -139,6 +139,73 @@ def scan_for_vulnerabilities(
     }
 
 
+def _format_block_comment(findings: list[Finding]) -> str:
+    """Render CRIT/HIGH findings as a GitHub PR comment body with file:line attribution."""
+    lines = ["## 🛡️ DeployGuard — SecurityAgent: **DEPLOYMENT BLOCKED**", ""]
+    crit = [f for f in findings if f.severity in (Severity.CRIT, Severity.HIGH)]
+    lines.append(f"Found **{len(crit)}** critical/high security issue(s):\n")
+    for f in crit:
+        lines.append(f"- **{f.severity.value}** — `{f.file}:{f.line}` — {f.message}")
+    lines.append("")
+    lines.append("_This PR is blocked from deployment until these are resolved._")
+    return "\n".join(lines)
+
+
+@tool
+def security_review(repo: str, pr_number: int) -> dict:
+    """Run the COMPLETE security review for a PR in one deterministic call.
+
+    SecurityAgent should call THIS and nothing else for analysis: it fetches the diff,
+    runs the full vulnerability scan, and — when the verdict is BLOCK — AUTOMATICALLY posts
+    the CRITICAL findings as a PR comment (so the block never depends on the model
+    remembering to). Returns everything needed to hand off:
+
+      {verdict, max_severity, findings, comment_url, summary, handoff}
+
+    `handoff` is the exact @handle to @mention in your next band_send_message:
+    the on-call engineer on BLOCK, RiskAgent otherwise.
+    """
+    from shared.band_handles import agent_handle, engineer_handle
+    from tools.github_api import get_pr_diff, post_pr_comment
+
+    diff = get_pr_diff.invoke({"repo": repo, "pr_number": pr_number})
+    if isinstance(diff, str) and diff.startswith("ERROR"):
+        # Diff fetch failed — fail safe: no findings, continue the chain to RiskAgent.
+        return {
+            "verdict": Verdict.PASS.value,
+            "max_severity": Severity.LOW.value,
+            "findings": [],
+            "comment_url": "",
+            "summary": f"Could not fetch diff ({diff[:120]}); proceeding with no findings.",
+            "handoff": agent_handle("RiskAgent"),
+        }
+
+    findings = scan_diff_regex(diff)
+    max_sev = _max_severity(findings)
+    verdict = SEVERITY_TO_VERDICT.get(max_sev, Verdict.PASS)
+
+    comment_url = ""
+    if verdict == Verdict.BLOCK and findings:
+        comment_url = post_pr_comment.invoke(
+            {"repo": repo, "pr_number": pr_number, "body": _format_block_comment(findings)}
+        )
+
+    handoff = engineer_handle() if verdict == Verdict.BLOCK else agent_handle("RiskAgent")
+    n = len(findings)
+    summary = (
+        f"verdict={verdict.value} max_severity={max_sev.value} findings={n}"
+        + (f" — posted block comment: {comment_url}" if comment_url else "")
+    )
+    return {
+        "verdict": verdict.value,
+        "max_severity": max_sev.value,
+        "findings": [f.model_dump() for f in findings],
+        "comment_url": comment_url,
+        "summary": summary,
+        "handoff": handoff,
+    }
+
+
 def _llm_scan(diff: str, agent_key: str) -> str:
     """Ask an LLM to review the diff for security issues not caught by regex."""
     try:

@@ -51,6 +51,70 @@ def test_scan_for_vulnerabilities_tool_clean():
     assert result["max_severity"] != "CRIT"
 
 
+def test_security_review_blocks_and_autoposts(monkeypatch):
+    """The deterministic review tool must auto-post the CRIT comment + escalate, with no
+    dependence on the LLM. This locks the demo's hero visual."""
+    import os
+
+    os.environ.setdefault("BAND_USERNAME", "danny.ssd7")
+    import tools.github_api as gh
+    from langchain_core.tools import tool
+
+    posted: list[str] = []
+
+    @tool
+    def _diff(repo: str, pr_number: int) -> str:
+        """fake"""
+        return (FIXTURES / "vuln_pr_diff.txt").read_text()
+
+    @tool
+    def _post(repo: str, pr_number: int, body: str) -> str:
+        """fake"""
+        posted.append(body)
+        return "https://github.com/x/y/pull/1#comment-1"
+
+    monkeypatch.setattr(gh, "get_pr_diff", _diff)
+    monkeypatch.setattr(gh, "post_pr_comment", _post)
+
+    from tools.security_scanner import security_review
+
+    r = security_review.invoke({"repo": "x/y", "pr_number": 1})
+    assert r["verdict"] == "BLOCK"
+    assert len(posted) == 1, "must auto-post exactly one CRIT comment"
+    assert r["handoff"].endswith("danny.ssd7"), "BLOCK escalates to the engineer"
+
+
+def test_security_review_clean_routes_to_risk(monkeypatch):
+    import os
+
+    os.environ.setdefault("BAND_USERNAME", "danny.ssd7")
+    import tools.github_api as gh
+    from langchain_core.tools import tool
+
+    posted: list[str] = []
+
+    @tool
+    def _diff(repo: str, pr_number: int) -> str:
+        """fake"""
+        return (FIXTURES / "clean_pr_diff.txt").read_text()
+
+    @tool
+    def _post(repo: str, pr_number: int, body: str) -> str:
+        """fake"""
+        posted.append(body)
+        return "url"
+
+    monkeypatch.setattr(gh, "get_pr_diff", _diff)
+    monkeypatch.setattr(gh, "post_pr_comment", _post)
+
+    from tools.security_scanner import security_review
+
+    r = security_review.invoke({"repo": "x/y", "pr_number": 2})
+    assert r["verdict"] == "PASS"
+    assert posted == [], "clean diff must NOT post a comment"
+    assert "riskagent" in r["handoff"], "PASS hands off to RiskAgent"
+
+
 # ── risk_scorer ──────────────────────────────────────────────────────────────
 
 

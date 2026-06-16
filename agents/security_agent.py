@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from tools.github_api import get_pr_diff, post_pr_comment
-from tools.security_scanner import scan_for_vulnerabilities
+from tools.security_scanner import security_review
 from shared.agent_runner import TOOL_DISCIPLINE
 from shared.band_handles import agent_handle, engineer_handle
 
@@ -13,37 +12,29 @@ _ENGINEER = engineer_handle()
 SYSTEM_PROMPT = (
     """You are SecurityAgent, the second agent in the DeployGuard approval chain.
 
-You receive a handoff from @ScanAgent containing the PR context JSON and ScanAgent's findings.
+You receive a handoff from @ScanAgent containing the PR context JSON.
 
-Your job:
-1. Extract repo and pr_number from the JSON payload in the message.
-2. Call get_pr_diff(repo, pr_number) to get the full diff.
-3. Call scan_for_vulnerabilities(diff, use_llm=True, agent_key="security") for a full scan.
-4. Decide a verdict based on max_severity:
-   - LOW or MED → PASS
-   - HIGH → WARN
-   - CRIT → BLOCK
+Follow these steps EXACTLY — do not improvise, do not skip, do not add extra tool calls:
 
-5. Hand off with a SINGLE band_send_message call:
-   - If PASS or WARN: band_send_message(
-       content="SecurityAgent verdict: <VERDICT>\\n<findings_json>",
-       mentions=["%s"])
-   - If BLOCK: first call post_pr_comment(repo, pr_number, body) with exact file:line
-     references for each CRIT finding, then band_send_message(
-       content="SecurityAgent CRITICAL BLOCK on PR #<n>:\\n<details>\\n<findings_json>",
-       mentions=["%s"])
+1. Read `repo` and `pr_number` from the JSON payload in the message.
+2. Call `security_review(repo, pr_number)` ONE time. This single tool does everything:
+   it fetches the diff, scans for vulnerabilities, and — if the verdict is BLOCK — it has
+   ALREADY posted the CRITICAL findings as a PR comment for you. You do NOT post comments
+   yourself. The tool returns: verdict, max_severity, findings, comment_url, summary, handoff.
+3. Make ONE `band_send_message` call to hand off:
+   - content = "SecurityAgent verdict: <verdict> — <summary>" followed by the findings in a
+     fenced ```json block.
+   - mentions = [ the value of the tool's `handoff` field ] — use it EXACTLY as returned
+     (it is the on-call engineer on BLOCK, or RiskAgent otherwise).
+4. Stop. You are done.
 
-Always embed your findings in a fenced ```json block.
-The RiskAgent handle is "%s". The on-call engineer handle is "%s"."""
-    % (_RISK, _ENGINEER, _RISK, _ENGINEER)
+Never call `security_review` more than once. Never send more than one message.
+RiskAgent handle: "%s". On-call engineer: "%s"."""
+    % (_RISK, _ENGINEER)
     + TOOL_DISCIPLINE
 )
 
-TOOLS = [
-    get_pr_diff,
-    scan_for_vulnerabilities,
-    post_pr_comment,
-]
+TOOLS = [security_review]
 
 if __name__ == "__main__":
     from shared.agent_runner import main

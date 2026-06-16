@@ -4,7 +4,10 @@
 
 defaults:
   provider: featherless
-  temperature: 0.1
+  # temperature 0 = greedy/deterministic decoding. The agents only orchestrate (the real
+  # analysis lives in the tools), so we want the SAME tool calls + hand-off every run — no
+  # creative wandering. This is the main lever for verdict consistency.
+  temperature: 0
   max_tokens: 2048
   request_timeout: 120
 
