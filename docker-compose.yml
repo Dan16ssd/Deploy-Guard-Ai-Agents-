@@ -8,7 +8,7 @@ x-agent-base: &agent-base
 services:
   webhook:
     <<: *agent-base
-    command: uvicorn webhook.main:app --host 0.0.0.0 --port 8000
+    command: python -m webhook.main
     ports:
       - "8000:8000"
     healthcheck:

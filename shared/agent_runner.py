@@ -40,10 +40,39 @@ handle to use.
 
 
 # Open-source coder models (Qwen3-Coder) tend to keep re-calling tools instead of
-# emitting a final hand-off message. A low recursion limit makes the ReAct loop fail
-# fast rather than spinning to 50, and the tightened prompts tell the model to call
-# each tool at most once and then stop with a single @mention reply.
-DEFAULT_RECURSION_LIMIT = 25
+# emitting a final hand-off message. We give the ReAct loop headroom (a too-low limit
+# made RiskAgent fail with GraphRecursionError before it could finish) and instead rely
+# on the first-send-wins guard in `_wrap_send_message` to terminate cleanly: once the one
+# valid hand-off is delivered, further band_send_message calls are refused with a hard
+# "you are DONE" so the model stops looping even if it keeps trying to emit tool calls.
+DEFAULT_RECURSION_LIMIT = 50
+
+
+def _allowed_handles(agent_key: str) -> tuple[set[str], str]:
+    """Return (allowed-mention handles, fallback handle) for an agent's hand-off.
+
+    The small models hallucinate recipients (observed: a made-up `@.../expert` and a
+    *backward* `@.../scanagent`). Each agent may only hand off to its real next hop(s) or
+    the on-call engineer; anything else is dropped. If a send survives with no valid handle
+    we snap to `fallback` so the chain still advances to a real participant. Handles are
+    lower-cased for comparison (Band handles are case-insensitive, models vary the casing).
+    """
+    from .band_handles import agent_handle, engineer_handle
+
+    eng = engineer_handle()
+    sec, risk = agent_handle("SecurityAgent"), agent_handle("RiskAgent")
+    deploy, report = agent_handle("DeployAgent"), agent_handle("ReportAgent")
+    # (allowed list, fallback). Risk/Report fall back to the engineer (always safe — never
+    # auto-advances a risky PR toward deploy); the others fall back to their next agent.
+    table: dict[str, tuple[list[str], str]] = {
+        "scan": ([sec, eng], sec),
+        "security": ([risk, eng], risk),
+        "risk": ([deploy, report, eng], eng),
+        "deploy": ([report, eng], report),
+        "report": ([eng], eng),
+    }
+    allowed, fallback = table.get(agent_key, ([eng], eng))
+    return {h.lower() for h in allowed}, fallback
 
 
 def _normalize_mentions(mentions: Any) -> list[str]:
@@ -76,22 +105,31 @@ def _normalize_mentions(mentions: Any) -> list[str]:
     return out
 
 
-def _wrap_send_message(platform_tool: Any) -> Any:
-    """Return a band_send_message tool with a loosened schema + mention normalization.
+def _wrap_send_message(
+    platform_tool: Any,
+    allowed: set[str] | None = None,
+    fallback: str | None = None,
+) -> Any:
+    """Return a band_send_message tool with a loosened schema + hand-off discipline.
 
-    The original tool's args_schema rejects a stringified-list `mentions`, so we expose a
-    schema that accepts list OR str, normalize inside, then delegate to the real tool.
+    Three guards on top of the platform tool, all aimed at the small open-source models that
+    otherwise loop to the recursion limit and spray bogus recipients:
+
+    * mention normalization — accept a stringified-list `mentions` (Qwen emits the str
+      '["x"]' instead of a real array, which fails Band's schema and loops the agent);
+    * allowed-mention filtering — drop hallucinated/backward handles (`@.../expert`,
+      `@.../scanagent`) and snap to `fallback` if nothing valid survives;
+    * first-send-wins — the chain protocol is exactly ONE hand-off per activation, so after
+      the first successful delivery we refuse further sends with a hard "you are DONE". This
+      both stops the multi-target spray and breaks the model out of its tool-calling loop.
     """
     from langchain_core.tools import StructuredTool
     from pydantic import BaseModel, Field
 
-    # Per-wrapper idempotency cache. Band's runtime re-runs an agent's pending message on
-    # WebSocket reconnect (see `_resync_pending_messages`), and flaky connectivity to
-    # app.band.ai (httpx ConnectTimeout/ConnectError) makes those reconnects frequent — so
-    # the SAME handoff can be delivered 2–3× (observed in scan/security/risk logs). We dedupe
-    # on (content, mentions): a repeat returns the original platform result WITHOUT re-posting,
-    # so the chat room shows each verdict exactly once.
-    _delivered: dict[tuple[str, tuple[str, ...]], Any] = {}
+    # Per-activation latch. Band re-runs an agent's pending message on WebSocket reconnect,
+    # and a fresh wrapper is built per run, so this correctly resets each activation while
+    # collapsing intra-run retries/resyncs into a single delivered hand-off.
+    _state: dict[str, Any] = {"delivered": False, "result": None}
 
     class _HandoffArgs(BaseModel):
         content: str = Field(description="The message content to send.")
@@ -104,27 +142,49 @@ def _wrap_send_message(platform_tool: Any) -> Any:
         )
 
     async def _send(content: str, mentions: Any = None) -> Any:
-        norm = _normalize_mentions(mentions)
         import sys
+
+        if _state["delivered"]:
+            print(
+                "[band_send_message] REFUSED: hand-off already delivered this activation.",
+                file=sys.stderr,
+                flush=True,
+            )
+            return (
+                "You have already delivered your one hand-off message. You are DONE: do "
+                "NOT call band_send_message again and do NOT call any other tool. Stop now."
+            )
+
+        norm = _normalize_mentions(mentions)
+        if allowed:
+            valid = [h for h in norm if h.lower() in allowed]
+            dropped = [h for h in norm if h.lower() not in allowed]
+            if dropped:
+                print(
+                    f"[band_send_message] DROPPED invalid mentions {dropped!r} "
+                    f"(allowed={sorted(allowed)})",
+                    file=sys.stderr,
+                    flush=True,
+                )
+            if not valid and fallback:
+                valid = [fallback]
+                print(
+                    f"[band_send_message] SNAP: no valid mention; using fallback {fallback!r}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+            norm = valid
 
         print(
             f"[band_send_message] mentions_in={mentions!r} -> {norm!r}",
             file=sys.stderr,
             flush=True,
         )
-        key = (content, tuple(norm))
-        if key in _delivered:
-            print(
-                "[band_send_message] DEDUP: identical (content, mentions) already "
-                "delivered; skipping re-post.",
-                file=sys.stderr,
-                flush=True,
-            )
-            return _delivered[key]
         try:
             result = await platform_tool.coroutine(content=content, mentions=norm)
             print(f"[band_send_message] RESULT={result!r}", file=sys.stderr, flush=True)
-            _delivered[key] = result
+            _state["delivered"] = True
+            _state["result"] = result
             return result
         except Exception as exc:
             print(
@@ -163,10 +223,13 @@ def build_adapter(
     llm = build_llm(agent_key)
     checkpointer = InMemorySaver()
     additional = list(tools)
+    allowed, fallback = _allowed_handles(agent_key)
 
     def factory(band_tools: list[Any]) -> Any:
         wrapped = [
-            _wrap_send_message(t) if getattr(t, "name", "") == "band_send_message" else t
+            _wrap_send_message(t, allowed, fallback)
+            if getattr(t, "name", "") == "band_send_message"
+            else t
             for t in band_tools
         ]
         return create_agent(model=llm, tools=wrapped + additional, checkpointer=checkpointer)

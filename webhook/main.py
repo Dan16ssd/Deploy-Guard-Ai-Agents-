@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import logging
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, Header, HTTPException, Request, status
 
 from webhook.parser import parse_pr_payload
 from webhook.verifier import verify_signature
+
+load_dotenv()  # load .env so GITHUB_WEBHOOK_SECRET / BAND_* are available under uvicorn
 
 logger = logging.getLogger(__name__)
 app = FastAPI(title="DeployGuard Webhook")
@@ -47,3 +50,14 @@ async def github_webhook(
     except Exception as exc:
         logger.exception("Failed to initiate Band chain for PR #%s", pr.pr_number)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+if __name__ == "__main__":
+    # Railway (and most PaaS) inject the port to bind via $PORT; default to 8000 locally.
+    # This makes `python -m webhook.main` the single start command everywhere — no shell
+    # variable expansion needed in the platform's start-command field.
+    import os
+
+    import uvicorn
+
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", "8000")))
