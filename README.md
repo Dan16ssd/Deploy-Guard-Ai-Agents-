@@ -4,9 +4,24 @@
 
 Every PR against `main` triggers a **sequential approval chain of five agents** that coordinate **exclusively through [Band](https://www.band.ai) @mentions**. Code cannot deploy until it survives all of them — or a human explicitly overrides a block in the Band chat room. Remove Band and the chain collapses: DeployAgent never receives its green light.
 
+```mermaid
+flowchart LR
+    Dev([PR opened]) -->|"webhook (HMAC)"| WH["FastAPI<br/>Webhook"]
+    WH --> Room["Band room<br/>+ @ScanAgent"]
+    Room --> Scan["🔍 Scan"]
+    Scan -->|PASS/WARN| Sec["🛡️ Security"]
+    Sec -->|"PASS/WARN"| Risk["⚖️ Risk"]
+    Sec -->|"CRIT → BLOCK"| Eng
+    Risk -->|"< 71"| Deploy["🚀 Deploy"]
+    Risk -->|"≥ 71 ESCALATE"| Eng["👤 Engineer"]
+    Eng -->|APPROVE| Deploy
+    Deploy --> Report["📋 Report"]
+    Eng -->|REJECT| Report
+    Scan -->|BLOCK| Eng
+    Report --> Done([Audit posted])
 ```
-GitHub PR → Webhook → @ScanAgent → @SecurityAgent → @RiskAgent → [Human?] → @DeployAgent → @ReportAgent
-```
+
+> 📐 **Full pipeline, decision branches, risk weights, and deployment topology: [ARCHITECTURE.md](ARCHITECTURE.md)**
 
 ## The chain
 
