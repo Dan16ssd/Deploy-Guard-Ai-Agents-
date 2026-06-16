@@ -23,3 +23,6 @@ htmlcov/
 Thumbs.db
 .idea/
 .vscode/
+
+# Private demo notes — never commit/push
+script.md
