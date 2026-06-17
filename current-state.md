@@ -1,162 +1,81 @@
 # DeployGuard — Current State
 
-_Last updated: 2026-06-14_
+_Last updated: 2026-06-17_
 
-Progress log for the DeployGuard build. See [PLAN.md](PLAN.md) for the full plan.
+**Repo:** https://github.com/Dan16ssd/Deploy-Guard-Ai-Agents-
+**Status:** ✅ **Live & end-to-end automated** — deployed on Railway, PRs auto-trigger the five-agent chain.
 
-**Repo:** https://github.com/Dan16ssd/Deploy-Guard-Ai-Agents- (Phase 1 pushed to `main`).
-
----
-
-## ✅ Done (Phase 0 — bootstrap + shared foundation)
-
-**Repo & config**
-- Git repo initialized (`main` branch).
-- `.gitignore`, `requirements.txt`, `.env.example`, `agent_config.yaml`.
-- `README.md`, `PLAN.md`, `current-state.md`.
-
-**`shared/` package — all verified working**
-- `verdict.py` — `Verdict` (PASS/WARN/BLOCK/ESCALATE), `Severity`, `HumanDecision`, `SEVERITY_TO_VERDICT`.
-- `context_schema.py` — Pydantic payloads: `PRContext`, `Finding`, `ScanFindings`, `SecurityFindings`, `RiskReport`, `DeployResult`, `AuditRecord`.
-- `band_helpers.py` — parse @mentions, extract/format fenced-JSON payloads, `compose_handoff`, `detect_human_decision`.
-- `chain_state.py` — per-room idempotency + stage tracking (in-memory).
-- `llm_factory.py` — builds per-agent `ChatOpenAI` from `agent_config.yaml` + env.
-- `agent_runner.py` — single Band SDK bootstrap reused by all agents.
-
-**Tests / fixtures**
-- `tests/test_shared.py` — 7 tests, all passing.
-- `tests/fixtures/vuln_pr_diff.txt` — planted SQL-injection + auth-bypass diff.
-- `tests/fixtures/clean_pr_diff.txt` — parameterized-query control diff.
-
-**Spikes**
-- `spike/spike_a_echo_agent.py` — single-agent connectivity check (run once credentials exist).
+See **[README.md](README.md)** for the overview and **[ARCHITECTURE.md](ARCHITECTURE.md)** for the full design.
 
 ---
 
-## ✅ Done (Phase 1 — tools, webhook, agents, infrastructure)
+## ✅ Live deployment
 
-**`tools/` — 7 files, all complete**
-- `github_api.py` — `get_pr_metadata`, `get_pr_diff`, `get_pr_files`, `post_pr_comment` (PyGithub + httpx).
-- `static_analyzer.py` — runs `ruff` via subprocess on diff-extracted Python; returns structured `Finding` list.
-- `test_runner.py` — runs `pytest` via subprocess; parses pass/fail/error counts.
-- `dep_auditor.py` — runs `pip-audit` via subprocess; returns CVE list + count.
-- `security_scanner.py` — **the star**: regex patterns for SQL injection (concat, %-format, f-string), hardcoded secrets, AWS keys, command injection, path traversal + optional LLM deep-scan pass. Returns verdict PASS/WARN/BLOCK with file+line.
-- `risk_scorer.py` — weighted score 0–100: auth file +30, payment file +40, Friday +15, diff >500 lines +10, each WARN +5 (capped at 20). Returns verdict PASS or ESCALATE.
-- `deploy_trigger.py` — fires real `workflow_dispatch` on `TARGET_REPO`; polls every 10s up to 5 min; returns READY/FAILED/TIMEOUT.
-
-**`webhook/` — 4 files, complete**
-- `verifier.py` — HMAC-SHA256 of raw body vs `X-Hub-Signature-256`.
-- `parser.py` — GitHub `pull_request` payload → `PRContext` (ignores non-`main` base branches).
-- `band_initiator.py` — creates Band room `PR-{n}-deployguard` + posts opening `@ScanAgent` message. ⚠️ Spike C endpoint paths TBD.
-- `main.py` — FastAPI `POST /webhook` + `GET /health`.
-
-**`agents/` — all 5 agents, complete**
-- `scan_agent.py` — ScanAgent: calls github_api + static_analyzer + test_runner + dep_auditor; hands off to @SecurityAgent or blocks to engineer.
-- `security_agent.py` — SecurityAgent: calls security_scanner (regex + LLM); hands off to @RiskAgent or CRIT-blocks to engineer.
-- `risk_agent.py` — RiskAgent: calls risk_scorer; PASS → @DeployAgent; ESCALATE → @engineer then waits for APPROVE/REJECT reply.
-- `deploy_agent.py` — DeployAgent: calls deploy_trigger; posts PR comment; hands off to @ReportAgent.
-- `report_agent.py` — ReportAgent: assembles full audit table + posts PR comment. Always runs last.
-
-**Infrastructure**
-- `Dockerfile` — Python 3.11-slim, installs requirements, copies src.
-- `docker-compose.yml` — 6 services: webhook (port 8000, health check) + 5 agents.
-- `.github/workflows/ci.yml` — ruff + black + mypy + pytest + docker build on every push/PR.
-- `.github/workflows/deploy.yml` — CI → GHCR image push → Railway redeploy → health check on merge to main.
-
-**Tests**
-- `tests/test_tools.py` — 13 new tests covering security_scanner (vuln flags CRIT, clean passes), risk_scorer (auth/payment/large-diff/cap), static_analyzer, webhook parser + verifier.
-- `tests/fixtures/sample_pr_payload.json` — GitHub webhook payload fixture.
-- **Total: 20 tests, all passing.**
+- **Hosting:** Railway, two services from this repo:
+  - `webhook` — `python -m webhook.main`, public domain, `GET /health` → `{"status":"ok"}`.
+  - `agents` — `python -m run_all_agents`, all five agents in one supervised process.
+- **Trigger:** GitHub `pull_request` webhook (HMAC-verified) on `Dan16ssd/deployguard-target` → webhook creates a Band room and pings `@ScanAgent`.
+- **Verified end-to-end:** opening a PR delivers the event (HTTP 202), the chain runs in Band, and the security verdict + audit land on the PR.
+- **Demo PRs on the target repo:**
+  - **#1 (vulnerable)** — planted SQL injection → SecurityAgent **blocks** and auto-posts a `CRITICAL` comment (fail-fast).
+  - **#2 (clean)** — safe feature → flows `Scan → Security → Risk → Deploy → Report` and deploys.
 
 ---
 
-## ✅ Version control / CI hygiene
-- `pyproject.toml` (ruff + black + pytest config; line length owned by black, `E501` ignored) and `.gitattributes` (LF normalization) added.
-- Phase 1 code reformatted with black + ruff import-sorting so the lint gates in `ci.yml` pass. Full suite is **20 tests green** locally.
+## ✅ Reliability hardening (deterministic where it matters)
+
+Small open-source models orchestrate the chat, but every **security-critical decision is produced by code**, so outcomes are consistent run to run:
+
+- **`security_review`** — fetches the diff, scans (OWASP regex), and **auto-posts the `CRITICAL` block comment** itself; the block never depends on the model.
+- **`post_audit_report`** — reconstructs the outcome from real signals (block comment + deploy run) and posts a clean audit table; no chat-history parsing.
+- **Self-healing identifiers** (`_resolve_target`) — placeholder repo/PR args snap to the configured target + its open PR, so the chain always acts on the real PR.
+- **Fail-closed** — if a diff can't be fetched, SecurityAgent escalates for manual review (never a silent approve).
+- **Hand-off discipline** — one delivery per turn, mention allow-listing, reconnect-resilient agents, `temperature 0`.
+- **Quality gate:** **22 tests passing**; `ruff` + `black` clean; CI runs lint + tests + Docker build.
 
 ---
 
-## ✅ Band SDK integration verified (deps installed; Spikes B & C resolved against the real SDK)
-`pip install -r requirements.txt` done — `band-sdk 1.0.0`, `thenvoi-client-rest 0.0.7`, `langgraph`, etc. installed. All 19 agent/tool/webhook modules import cleanly. Inspecting the installed SDK corrected two wrong assumptions:
-- **Spike B (fixed in `shared/agent_runner.py`):** `LangGraphAdapter` takes tools as **`additional_tools=`** and the per-agent prompt as **`custom_section=`** — there is no `system_prompt=`/`tools=` arg. Adapter now builds end-to-end with a Featherless-style `ChatOpenAI`.
-- **Spike C (rewrote `webhook/band_initiator.py`):** replaced guessed `httpx` calls to `/v1/rooms` with the real generated client: `RestClient(api_key, base_url)` → `agent_api_chats.create_agent_chat(ChatRoomRequest(task_id))` → add participants → `agent_api_messages.create_agent_chat_message(chat_id, ChatMessageRequest(content, mentions=[ScanAgent]))`. Verified by constructing all request objects (no network).
-- `.env.example` URLs corrected to the SDK defaults (`https://app.band.ai`, `wss://app.band.ai/api/v1/socket/websocket`).
+## ✅ Architecture & components (built and in use)
 
-**Still unverifiable without live credentials:** whether Featherless serves the exact model IDs in `agent_config.yaml`, and whether participant-adding needs pre-existing Band contacts. Both surface on the first live **Spike A** run.
+**`shared/`** — `verdict.py` (PASS/WARN/BLOCK/ESCALATE), `context_schema.py` (Pydantic payloads), `band_helpers.py`, `llm_factory.py` (per-agent ChatOpenAI from `agent_config.yaml`), `agent_runner.py` (Band adapter wiring + hand-off discipline), `band_handles.py` (@mention resolution).
 
----
+**`tools/`** — `github_api.py` (PR metadata/diff/files/comment + audit report + self-healing resolver), `security_scanner.py` (`security_review` deterministic block), `risk_scorer.py` (weighted 0–100 score), `static_analyzer.py` (ruff), `test_runner.py` (pytest), `dep_auditor.py` (pip-audit), `deploy_trigger.py` (`workflow_dispatch`).
 
-## ⏳ Blocked on credentials (still needed)
-- Register 5 agents at app.band.ai → fill `*_AGENT_ID` / `*_AGENT_API_KEY` in `.env`.
-- Featherless API key → `FEATHERLESS_API_KEY` in `.env`.
-- GitHub PAT (`contents:read`, `pull_requests:write`, `actions:write`) → `GITHUB_TOKEN`.
-- Create target repo + `DEPLOY_WORKFLOW_FILE` (`deploy.yml` with `workflow_dispatch` trigger).
-- Set `GITHUB_WEBHOOK_SECRET` and configure GitHub webhook pointing at ngrok/Railway URL.
+**`agents/`** — `scan`, `security`, `risk`, `deploy`, `report`, each a rigid single-tool → hand-off flow. `run_all_agents.py` runs all five in one supervised process.
+
+**`webhook/`** — `verifier.py` (HMAC-SHA256), `parser.py` (PR payload → `PRContext`, main-only), `band_initiator.py` (creates the Band room + opening message via the generated REST client), `main.py` (FastAPI `/webhook` + `/health`, binds `$PORT`).
+
+**Infra** — `Dockerfile` (default CMD = webhook; agents override the start command), `docker-compose.yml`, GitHub Actions CI.
 
 ---
 
-## 🔜 Next up (in order)
+## Integration notes (resolved)
 
-1. **Fill `.env`** with real credentials (Band + Featherless + GitHub PAT). _(Owner: you.)_
-2. **Run Spike A** (`python -m spike.spike_a_echo_agent`) — the make-or-break live test: confirms Band WebSocket + Featherless tool-calling. (Adapter wiring already verified offline.)
-3. **ngrok** (`ngrok http 8000`) + register GitHub webhook on target repo.
-4. **E2E test** — open a PR with `vuln_pr_diff.txt` content → watch Band chat light up → confirm CRIT block.
-5. **Railway deploy** — 6 services live, `GET /health` 200.
-6. **Demo video + slides** — record 5-min demo, export PDF.
-7. **Submit** on lablab.ai (repo, video, slides, live URL) by Jun 19.
+- **Band SDK** (`band-sdk 1.0.0`): adapter built via `graph_factory` so the injected `band_send_message` tool is wrapped for mention-normalization, allow-listing, and first-send-wins.
+- **Band identities:** all five agents + the service agent authenticate; the engineer is a peer, so room participant-adding works without extra wiring.
+- **Featherless models:** all five verified live; Qwen `<think>` output disabled globally; `temperature 0` for determinism.
+- **Target repo:** `Dan16ssd/deployguard-target` (clean app + passing test + `deploy.yml` `workflow_dispatch` + planted-vuln PR).
 
 ---
 
-## ⚠️ Open verification items (need live credentials)
-
-- Verify the exact Qwen model IDs in `agent_config.yaml` are served by Featherless (swap per-agent in config if not).
-- Confirm participant-adding in `band_initiator` doesn't require pre-existing Band contacts between the service agent and the chain agents.
-- ~~`LangGraphAdapter` signature~~ — resolved (Spike B).
-- ~~Band REST room-creation/message endpoints~~ — resolved (Spike C).
-
----
-
-## How to run what exists
+## How to run
 
 ```bash
-# Minimal install (for tests only, no Band/LLM credentials needed)
-pip install langchain-core pydantic pyyaml pytest
-pytest tests/ -q   # -> 20 passed
-
-# Full install
+# Tests only (no credentials/network needed)
 pip install -r requirements.txt
+pytest -q                         # 22 passed
 
-# Once .env is filled:
-python -m spike.spike_a_echo_agent   # Spike A gate
-uvicorn webhook.main:app --port 8000  # webhook only
-docker-compose up                     # all 6 services
+# Local run (with .env filled)
+python -m webhook.main            # webhook on :8000 ($PORT in cloud)
+python -m run_all_agents          # all five agents
+
+# Cloud: Railway — webhook (python -m webhook.main) + agents (python -m run_all_agents)
 ```
 
 ---
 
-## ✅ Session update — 2026-06-15 (live credential bring-up)
+## Remaining / future work
 
-**Dependencies installed** (`pip install -r requirements.txt`): band-sdk 1.0.0, thenvoi-client-rest, langgraph/langchain, etc. All 19 modules import cleanly.
-
-**Spike B fixed** (`shared/agent_runner.py`): `LangGraphAdapter` uses `additional_tools=` + `custom_section=` (no `tools=`/`system_prompt=`). Verified building end-to-end.
-
-**Spike C fixed** (`webhook/band_initiator.py`): rewrote to the real generated REST client — `RestClient` → `agent_api_chats.create_agent_chat` → `add_agent_chat_participant` → `agent_api_messages.create_agent_chat_message(ChatMessageRequest with mentions)`.
-
-**Band identities — all 6 authenticate** (`get_agent_me`): ScanAgent, SecurityAgent, RiskAgent, DeployAgent, ReportAgent, DeployGuard(service). (ReportAgent key was initially wrong; user fixed it.) All agents already appear as **peers** of each other in Band — no extra contact wiring needed.
-
-**Featherless models — all 5 verified live**, with two fixes:
-- Report model ID corrected: `Qwen/Qwen3-30B-A3B` → **`Qwen/Qwen3-30B-A3B-Instruct-2507`** (old ID 404'd).
-- Qwen3 hybrid `<think>` output disabled globally via `extra_body={"chat_template_kwargs":{"enable_thinking":False}}` in `shared/llm_factory.py` (risk agent was leaking reasoning).
-- Note: cheaper Featherless plans 429 on rapid model-switching across 5 distinct models — watch at demo time; mitigate by consolidating models or upgrading plan.
-
-**Webhook running locally**: added `load_dotenv()` to `webhook/main.py`; `uvicorn webhook.main:app --port 8000` boots; `GET /health` → `{"status":"ok"}`. `GITHUB_WEBHOOK_SECRET` generated (`f3a97af2…e912`) and set in `.env`.
-
-**Repo normalization** (`tools/deploy_trigger.py`): added `_normalize_repo()` so `TARGET_REPO` accepts a full GitHub URL or `owner/repo`.
-
-**Target repo decision**: `freqtrade/freqtrade` rejected — token has **pull-only** access (can't add webhook / trigger Actions / open PRs). Chose **Option B: a dedicated `Dan16ssd/deployguard-target`** repo (clean app + passing test + `deploy.yml` workflow_dispatch + pre-staged vuln branch). ⚠️ Automated creation via PAT was **blocked by the sandbox permission classifier** — needs the user to create it (or grant permission / run the script via `!`).
-
-### 🔜 Immediate next steps
-1. Create `deployguard-target` (user action — see blocker above), set `TARGET_REPO=Dan16ssd/deployguard-target` in `.env`.
-2. Tunnel for the Payload URL: `cloudflared tunnel --url http://localhost:8000` (no signup) → Payload URL = `<tunnel>/webhook`. Add webhook on the target repo (content-type `application/json`, secret above, Pull requests event).
-3. Bring agents online: `python -m agents.scan_agent` … (or `docker-compose up`).
-4. Open the vuln PR on the target repo → watch the chain block in Band.
+- **Demo deliverables:** record the 3–4 min video, export slides, submit on lablab.ai (repo, video, slides, live URL).
+- **Production path:** GitHub App (per-install scoped tokens) for true multi-repo / multi-tenant review.
+- **Nice-to-have:** richer risk factors; tighten agent chat prose (outcomes are already deterministic).
