@@ -191,10 +191,16 @@ def security_review(repo: str, pr_number: int) -> dict:
     comment_url = ""
     if verdict == Verdict.BLOCK and findings:
         comment_url = post_pr_comment.invoke(
-            {"repo": repo, "pr_number": pr_number, "body": _format_block_comment(findings)}
+            {
+                "repo": repo,
+                "pr_number": pr_number,
+                "body": _format_block_comment(findings),
+            }
         )
 
-    handoff = engineer_handle() if verdict == Verdict.BLOCK else agent_handle("RiskAgent")
+    handoff = (
+        engineer_handle() if verdict == Verdict.BLOCK else agent_handle("RiskAgent")
+    )
     n = len(findings)
     summary = (
         f"verdict={verdict.value} max_severity={max_sev.value} findings={n} "

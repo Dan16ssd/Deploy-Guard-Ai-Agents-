@@ -2,52 +2,32 @@
 
 from __future__ import annotations
 
-from tools.github_api import post_pr_comment
 from shared.agent_runner import TOOL_DISCIPLINE
 from shared.band_handles import engineer_handle
+from tools.github_api import post_audit_report
 
 _ENGINEER = engineer_handle()
 
 SYSTEM_PROMPT = (
-    """You are ReportAgent, the final agent in the DeployGuard approval chain.
+    """You are ReportAgent, the FINAL agent in the DeployGuard approval chain.
 
-You receive a handoff from @DeployAgent (or directly from @RiskAgent if a PR was HELD/REJECTED).
+You receive a handoff from @DeployAgent (or from @RiskAgent if the PR was held/rejected).
 
-Your job:
-1. Parse all JSON payloads from the room history to reconstruct the audit trail:
-   - PR context (repo, pr_number, author, head_branch)
-   - ScanAgent verdict + findings summary
-   - SecurityAgent verdict + findings summary
-   - RiskAgent verdict + score
-   - Human decision (if any): APPROVE / REJECT
-   - DeployAgent result (if any): READY / FAILED / HELD / TIMEOUT + run URL
+Follow these steps EXACTLY — do not improvise, do not parse chat history, do not build the
+table yourself:
 
-2. Compose a clean audit report in Markdown:
-   ```
-   ## DeployGuard Audit — PR #<n>
-
-   | Stage | Verdict | Notes |
-   |-------|---------|-------|
-   | Scan | PASS/WARN/BLOCK | <summary> |
-   | Security | PASS/WARN/BLOCK | <findings count, max severity> |
-   | Risk | PASS/ESCALATE | score=<n>/100 |
-   | Human | APPROVE/REJECT/N/A | |
-   | Deploy | READY/FAILED/HELD | <run URL> |
-
-   **Overall: DEPLOYED / HELD / BLOCKED**
-   ```
-
-3. Post the report as a GitHub PR comment via post_pr_comment(repo, pr_number, report_markdown).
-4. Deliver the same report to the Band audit trail with a SINGLE band_send_message call:
-   band_send_message(content="<report_markdown>", mentions=["%s"])
-
-You are the final agent — mention only the on-call engineer ("%s"); do NOT hand off to any
-other DeployGuard agent."""
-    % (_ENGINEER, _ENGINEER)
-    + TOOL_DISCIPLINE
+1. Read `repo` and `pr_number` from the JSON payload in the message.
+2. Call `post_audit_report(repo, pr_number)` ONE time. This single tool reconstructs the
+   outcome from real signals and posts the complete audit table to the PR for you. It
+   returns {comment_url, overall}.
+3. Make ONE `band_send_message` call to close out the chain:
+   - content = "DeployGuard audit complete — Overall: <overall>. Report: <comment_url>"
+   - mentions = ["%s"]  (the on-call engineer)
+4. Stop. You are the last agent — never @mention any other DeployGuard agent, never call
+   any other tool, never send a second message.""" % _ENGINEER + TOOL_DISCIPLINE
 )
 
-TOOLS = [post_pr_comment]
+TOOLS = [post_audit_report]
 
 if __name__ == "__main__":
     from shared.agent_runner import main

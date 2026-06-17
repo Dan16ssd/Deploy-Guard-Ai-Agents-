@@ -37,7 +37,9 @@ def run_static_analysis(diff: str) -> dict:
                     text=True,
                 )
                 issues = json.loads(result.stdout) if result.stdout.strip() else []
-            except Exception:  # noqa: BLE001 - ruff missing/erroring must not crash the agent
+            except (
+                Exception
+            ):  # noqa: BLE001 - ruff missing/erroring must not crash the agent
                 continue
             for issue in issues:
                 code = issue.get("code") or ""

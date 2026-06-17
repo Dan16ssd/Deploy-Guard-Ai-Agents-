@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from tools.security_scanner import security_review
 from shared.agent_runner import TOOL_DISCIPLINE
 from shared.band_handles import agent_handle, engineer_handle
+from tools.security_scanner import security_review
 
 _RISK = agent_handle("RiskAgent")
 _ENGINEER = engineer_handle()
@@ -29,8 +29,7 @@ Follow these steps EXACTLY — do not improvise, do not skip, do not add extra t
 4. Stop. You are done.
 
 Never call `security_review` more than once. Never send more than one message.
-RiskAgent handle: "%s". On-call engineer: "%s"."""
-    % (_RISK, _ENGINEER)
+RiskAgent handle: "%s". On-call engineer: "%s".""" % (_RISK, _ENGINEER)
     + TOOL_DISCIPLINE
 )
 

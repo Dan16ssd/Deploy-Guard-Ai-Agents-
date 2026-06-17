@@ -21,9 +21,13 @@ def run_tests(test_dir: str = "tests") -> dict:
             timeout=120,
         )
         stdout = result.stdout + result.stderr
-    except Exception as exc:  # noqa: BLE001 - pytest missing/timeout must not crash the agent
+    except (
+        Exception
+    ) as exc:  # noqa: BLE001 - pytest missing/timeout must not crash the agent
         return {
-            "passed": 0, "failed": 0, "errors": 0,
+            "passed": 0,
+            "failed": 0,
+            "errors": 0,
             "summary": f"tests skipped: {type(exc).__name__}: {exc}"[:300],
             "ok": True,
         }

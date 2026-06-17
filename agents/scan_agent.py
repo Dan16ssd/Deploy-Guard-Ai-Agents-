@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+from shared.agent_runner import TOOL_DISCIPLINE
+from shared.band_handles import agent_handle, engineer_handle
 from tools.dep_auditor import audit_dependencies
 from tools.github_api import get_pr_diff, get_pr_files, get_pr_metadata, post_pr_comment
 from tools.static_analyzer import run_static_analysis
 from tools.test_runner import run_tests
-from shared.agent_runner import TOOL_DISCIPLINE
-from shared.band_handles import agent_handle, engineer_handle
 
 _SECURITY = agent_handle("SecurityAgent")
 _ENGINEER = engineer_handle()

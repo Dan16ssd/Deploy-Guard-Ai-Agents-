@@ -131,3 +131,32 @@ python -m spike.spike_a_echo_agent   # Spike A gate
 uvicorn webhook.main:app --port 8000  # webhook only
 docker-compose up                     # all 6 services
 ```
+
+---
+
+## ✅ Session update — 2026-06-15 (live credential bring-up)
+
+**Dependencies installed** (`pip install -r requirements.txt`): band-sdk 1.0.0, thenvoi-client-rest, langgraph/langchain, etc. All 19 modules import cleanly.
+
+**Spike B fixed** (`shared/agent_runner.py`): `LangGraphAdapter` uses `additional_tools=` + `custom_section=` (no `tools=`/`system_prompt=`). Verified building end-to-end.
+
+**Spike C fixed** (`webhook/band_initiator.py`): rewrote to the real generated REST client — `RestClient` → `agent_api_chats.create_agent_chat` → `add_agent_chat_participant` → `agent_api_messages.create_agent_chat_message(ChatMessageRequest with mentions)`.
+
+**Band identities — all 6 authenticate** (`get_agent_me`): ScanAgent, SecurityAgent, RiskAgent, DeployAgent, ReportAgent, DeployGuard(service). (ReportAgent key was initially wrong; user fixed it.) All agents already appear as **peers** of each other in Band — no extra contact wiring needed.
+
+**Featherless models — all 5 verified live**, with two fixes:
+- Report model ID corrected: `Qwen/Qwen3-30B-A3B` → **`Qwen/Qwen3-30B-A3B-Instruct-2507`** (old ID 404'd).
+- Qwen3 hybrid `<think>` output disabled globally via `extra_body={"chat_template_kwargs":{"enable_thinking":False}}` in `shared/llm_factory.py` (risk agent was leaking reasoning).
+- Note: cheaper Featherless plans 429 on rapid model-switching across 5 distinct models — watch at demo time; mitigate by consolidating models or upgrading plan.
+
+**Webhook running locally**: added `load_dotenv()` to `webhook/main.py`; `uvicorn webhook.main:app --port 8000` boots; `GET /health` → `{"status":"ok"}`. `GITHUB_WEBHOOK_SECRET` generated (`f3a97af2…e912`) and set in `.env`.
+
+**Repo normalization** (`tools/deploy_trigger.py`): added `_normalize_repo()` so `TARGET_REPO` accepts a full GitHub URL or `owner/repo`.
+
+**Target repo decision**: `freqtrade/freqtrade` rejected — token has **pull-only** access (can't add webhook / trigger Actions / open PRs). Chose **Option B: a dedicated `Dan16ssd/deployguard-target`** repo (clean app + passing test + `deploy.yml` workflow_dispatch + pre-staged vuln branch). ⚠️ Automated creation via PAT was **blocked by the sandbox permission classifier** — needs the user to create it (or grant permission / run the script via `!`).
+
+### 🔜 Immediate next steps
+1. Create `deployguard-target` (user action — see blocker above), set `TARGET_REPO=Dan16ssd/deployguard-target` in `.env`.
+2. Tunnel for the Payload URL: `cloudflared tunnel --url http://localhost:8000` (no signup) → Payload URL = `<tunnel>/webhook`. Add webhook on the target repo (content-type `application/json`, secret above, Pull requests event).
+3. Bring agents online: `python -m agents.scan_agent` … (or `docker-compose up`).
+4. Open the vuln PR on the target repo → watch the chain block in Band.

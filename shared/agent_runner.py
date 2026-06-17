@@ -227,12 +227,16 @@ def build_adapter(
 
     def factory(band_tools: list[Any]) -> Any:
         wrapped = [
-            _wrap_send_message(t, allowed, fallback)
-            if getattr(t, "name", "") == "band_send_message"
-            else t
+            (
+                _wrap_send_message(t, allowed, fallback)
+                if getattr(t, "name", "") == "band_send_message"
+                else t
+            )
             for t in band_tools
         ]
-        return create_agent(model=llm, tools=wrapped + additional, checkpointer=checkpointer)
+        return create_agent(
+            model=llm, tools=wrapped + additional, checkpointer=checkpointer
+        )
 
     return LangGraphAdapter(
         graph_factory=factory,
@@ -297,7 +301,9 @@ def main(
     load_dotenv()
     try:
         asyncio.run(
-            run_agent(agent_key, system_prompt, tools, reconnect_retries=reconnect_retries)
+            run_agent(
+                agent_key, system_prompt, tools, reconnect_retries=reconnect_retries
+            )
         )
     except KeyboardInterrupt:
         pass

@@ -50,7 +50,11 @@ async def _supervise(agent_key: str, system_prompt: str, tools: Sequence[Any]) -
             # run_agent already retries transient Band WebSocket drops internally; this outer
             # loop catches anything that still escapes (e.g. a hard crash) and cold-restarts.
             await run_agent(agent_key, system_prompt, tools, reconnect_retries=5)
-            print(f"[{agent_key}] run_agent returned; restarting.", file=sys.stderr, flush=True)
+            print(
+                f"[{agent_key}] run_agent returned; restarting.",
+                file=sys.stderr,
+                flush=True,
+            )
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 — supervisor must never propagate
