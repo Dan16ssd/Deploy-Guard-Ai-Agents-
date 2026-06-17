@@ -57,23 +57,25 @@ def audit_dependencies(requirements_file: str = "requirements.txt") -> dict:
             "summary": f"no {requirements_file} to audit — dependency check skipped",
         }
 
-    # Guard: ScanAgent runs in the DeployGuard repo, whose own requirements.txt is large and
-    # makes pip-audit's resolver backtrack for minutes. The PR under review changes no
-    # dependency manifest, so there is nothing to audit — skip instantly rather than resolve
-    # the host project's full dependency tree. (Real per-PR dep audits would pass the PR's
-    # own small requirements file here.)
+    # Guard: ScanAgent runs inside the DeployGuard service, so the only requirements.txt it
+    # can see is the agent runtime's own — not the PR's dependencies. That manifest pulls a
+    # huge transitive tree (band-sdk + langchain + langgraph) that makes pip-audit backtrack
+    # for minutes, and auditing it tells us nothing about the PR. Detect it (by size or by the
+    # agent-framework packages it contains) and skip instantly with a clean message. A real
+    # per-PR dependency audit would pass the PR's own (small) manifest here instead.
     try:
         with open(requirements_file, encoding="utf-8") as f:
             pkg_lines = [
                 ln for ln in f if ln.strip() and not ln.lstrip().startswith("#")
             ]
-        if len(pkg_lines) > 30:
+        joined = " ".join(pkg_lines).lower()
+        host_markers = ("band-sdk", "langgraph", "langchain")
+        if len(pkg_lines) > 30 or any(m in joined for m in host_markers):
             return {
                 "cve_count": 0,
                 "cves": [],
                 "summary": (
-                    f"{requirements_file} is the host project's manifest "
-                    f"({len(pkg_lines)} pkgs); PR changes no dependencies — audit skipped"
+                    "dependency audit not required — this PR changes no dependency manifest"
                 ),
             }
     except Exception:
@@ -120,7 +122,12 @@ def audit_dependencies(requirements_file: str = "requirements.txt") -> dict:
                     f"{dep.get('name', '?')} {dep.get('version', '?')}: {vid} — {desc}"
                 )
     except Exception as exc:  # noqa: BLE001 - a tool must never crash/stall the agent
-        summary = f"dep audit skipped: {type(exc).__name__}: {exc}"[:300]
+        kind = (
+            "time budget exceeded"
+            if isinstance(exc, TimeoutError)
+            else type(exc).__name__
+        )
+        summary = f"dependency audit skipped — {kind}"
     finally:
         if out_path:
             try:

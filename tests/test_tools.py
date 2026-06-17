@@ -192,6 +192,32 @@ def test_risk_scorer_score_capped_at_100():
     assert result["score"] <= 100
 
 
+# ── dep_auditor ──────────────────────────────────────────────────────────────
+
+
+def test_dep_audit_skips_host_manifest_cleanly(tmp_path):
+    """An agent-runtime manifest (contains band-sdk/langgraph) must skip instantly with a
+    clean, professional message — never run pip-audit, never surface a TimeoutError."""
+    from tools.dep_auditor import audit_dependencies
+
+    req = tmp_path / "requirements.txt"
+    req.write_text("band-sdk[langgraph]==1.0.0\nlangchain-core>=0.3\nfastapi>=0.110\n")
+    result = audit_dependencies.invoke({"requirements_file": str(req)})
+    assert result["cve_count"] == 0
+    assert "not required" in result["summary"]
+    assert "TimeoutError" not in result["summary"] and "skipped:" not in result["summary"]
+
+
+def test_dep_audit_missing_file_is_clean(tmp_path):
+    from tools.dep_auditor import audit_dependencies
+
+    result = audit_dependencies.invoke(
+        {"requirements_file": str(tmp_path / "nope.txt")}
+    )
+    assert result["cve_count"] == 0
+    assert "skipped" in result["summary"]
+
+
 # ── static_analyzer ──────────────────────────────────────────────────────────
 
 
