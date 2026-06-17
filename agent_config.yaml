@@ -36,7 +36,10 @@ agents:
     id_env: DEPLOY_AGENT_ID
     key_env: DEPLOY_AGENT_API_KEY
     provider: featherless
-    model: Qwen/Qwen3-8B                         # mechanical tool calling
+    # Was Qwen3-8B — too weak to reliably emit the deploy tool-call + hand-off (it replied in
+    # plain text, which Band drops, stalling the chain at Deploy). Use the 30B workhorse that
+    # Risk/Report already run on.
+    model: Qwen/Qwen3-30B-A3B-Instruct-2507      # reliable tool calling + hand-off
   report:
     id_env: REPORT_AGENT_ID
     key_env: REPORT_AGENT_API_KEY
