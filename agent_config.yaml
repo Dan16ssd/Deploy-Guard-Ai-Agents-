@@ -12,19 +12,21 @@ defaults:
   request_timeout: 120
 
 agents:
+  # NOTE: all five agents use the SAME model on purpose. Featherless is serverless and
+  # rate-limits/cold-loads when you rapidly switch between distinct models mid-chain
+  # (the 429s that stall the full 5-agent run). Using one model keeps it warm = far fewer
+  # 429s. The real analysis lives in the deterministic tools, so the model only orchestrates
+  # (call tool -> hand off) — a non-coder Instruct model is plenty.
   scan:
     id_env: SCAN_AGENT_ID
     key_env: SCAN_AGENT_API_KEY
     provider: featherless
-    model: Qwen/Qwen3-Coder-30B-A3B-Instruct   # fast tool-calling, first in chain
+    model: Qwen/Qwen3-30B-A3B-Instruct-2507    # shared model (no switch penalty)
   security:
     id_env: SECURITY_AGENT_ID
     key_env: SECURITY_AGENT_API_KEY
     provider: featherless
-    # Was Qwen3-Coder-480B (4 concurrency units = the entire feather_pro_plus plan,
-    # which 429'd whenever any other agent was mid-call). The security regex/OWASP work
-    # lives in the security_scanner tool, so a 30B coder is plenty for orchestration.
-    model: Qwen/Qwen3-Coder-30B-A3B-Instruct  # deep code reasoning, low concurrency cost
+    model: Qwen/Qwen3-30B-A3B-Instruct-2507    # shared model (no switch penalty)
   risk:
     id_env: RISK_AGENT_ID
     key_env: RISK_AGENT_API_KEY
