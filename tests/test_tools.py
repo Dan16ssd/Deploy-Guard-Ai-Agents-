@@ -192,6 +192,57 @@ def test_risk_scorer_score_capped_at_100():
     assert result["score"] <= 100
 
 
+def _mock_meta(monkeypatch, changed_files):
+    """Point assess_risk's get_pr_metadata at a fake (no network)."""
+    import os
+
+    os.environ.setdefault("BAND_USERNAME", "danny.ssd7")
+    monkeypatch.setenv("TARGET_REPO", "")
+    from langchain_core.tools import tool
+
+    import tools.github_api as gh
+
+    @tool
+    def _meta(repo: str, pr_number: int) -> dict:
+        """fake"""
+        return {"changed_files": changed_files, "additions": 10, "deletions": 0}
+
+    monkeypatch.setattr(gh, "get_pr_metadata", _meta)
+
+
+def test_assess_risk_challenges_sensitive_passed_change(monkeypatch):
+    """A security-sensitive change SecurityAgent only PASSed must trigger a peer-review
+    challenge back to SecurityAgent (the agent-reviews-agent consensus gate)."""
+    _mock_meta(monkeypatch, ["app/auth.py"])
+    from tools.risk_scorer import assess_risk
+
+    r = assess_risk.invoke(
+        {
+            "repo": "x/y",
+            "pr_number": 1,
+            "scan_verdict": "PASS",
+            "security_verdict": "PASS",
+        }
+    )
+    assert r["cross_check"] == "challenge"
+    assert "securityagent" in r["challenge_handle"].lower()
+
+
+def test_assess_risk_endorses_nonsensitive_change(monkeypatch):
+    _mock_meta(monkeypatch, ["app/utils.py"])
+    from tools.risk_scorer import assess_risk
+
+    r = assess_risk.invoke(
+        {
+            "repo": "x/y",
+            "pr_number": 2,
+            "scan_verdict": "PASS",
+            "security_verdict": "PASS",
+        }
+    )
+    assert r["cross_check"] == "endorsed"
+
+
 # ── dep_auditor ──────────────────────────────────────────────────────────────
 
 
@@ -205,7 +256,9 @@ def test_dep_audit_skips_host_manifest_cleanly(tmp_path):
     result = audit_dependencies.invoke({"requirements_file": str(req)})
     assert result["cve_count"] == 0
     assert "not required" in result["summary"]
-    assert "TimeoutError" not in result["summary"] and "skipped:" not in result["summary"]
+    assert (
+        "TimeoutError" not in result["summary"] and "skipped:" not in result["summary"]
+    )
 
 
 def test_dep_audit_missing_file_is_clean(tmp_path):

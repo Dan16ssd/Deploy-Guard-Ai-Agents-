@@ -67,7 +67,8 @@ def _allowed_handles(agent_key: str) -> tuple[set[str], str]:
     table: dict[str, tuple[list[str], str]] = {
         "scan": ([sec, eng], sec),
         "security": ([risk, eng], risk),
-        "risk": ([deploy, report, eng], eng),
+        # risk may also hand BACK to security for a peer-review challenge (consensus gate).
+        "risk": ([deploy, report, sec, eng], eng),
         "deploy": ([report, eng], report),
         "report": ([eng], eng),
     }

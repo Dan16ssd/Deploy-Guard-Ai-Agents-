@@ -103,6 +103,12 @@ def assess_risk(
     from the two verdicts, computes the 0–100 score, and returns the exact next hand-off
     handle. Returns {score, verdict, factors, reasons, handoff} — DeployAgent on PASS, the
     on-call engineer on ESCALATE.
+
+    Peer review: also returns `cross_check`. If the PR touches security-sensitive files
+    (auth/payment) yet SecurityAgent only returned PASS/WARN, RiskAgent should NOT just trust
+    it — `cross_check` is "challenge" and `challenge_handle` is SecurityAgent, so RiskAgent
+    sends it back for a deeper re-scan (consensus required before deploy). Otherwise
+    `cross_check` is "endorsed".
     """
     from shared.band_handles import agent_handle, engineer_handle
     from tools.github_api import _resolve_target, get_pr_metadata
@@ -127,4 +133,15 @@ def assess_risk(
         if result["verdict"] == Verdict.PASS.value
         else engineer_handle()
     )
+
+    # Peer-review cross-check: a security-sensitive change that Security only PASSed/WARNed
+    # warrants a second look — RiskAgent challenges SecurityAgent to re-scan (consensus gate).
+    sensitive = any(
+        _AUTH_FILES.search(f) or _PAYMENT_FILES.search(f) for f in changed_files
+    )
+    sv = str(security_verdict).strip().upper()
+    result["cross_check"] = (
+        "challenge" if (sensitive and sv in ("PASS", "WARN")) else "endorsed"
+    )
+    result["challenge_handle"] = agent_handle("SecurityAgent")
     return result

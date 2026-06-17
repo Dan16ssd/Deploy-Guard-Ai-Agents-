@@ -28,6 +28,13 @@ Follow these steps EXACTLY — do not improvise, do not skip, do not add extra t
      (it is the on-call engineer on BLOCK, or RiskAgent otherwise).
 4. Stop. You are done.
 
+PEER REVIEW — if the incoming message contains the tag `[CROSS-CHECK]`, RiskAgent is
+challenging an earlier PASS and asking you to re-scan. Do the SAME steps (call
+`security_review` once), but prefix your `content` with the literal tag `[RE-REVIEWED]` so
+RiskAgent knows the re-scan is done — e.g. content="[RE-REVIEWED] SecurityAgent re-scan:
+<verdict> — <summary>" + findings json; mentions = [ the tool's `handoff` ]. (If the re-scan
+now finds a CRIT, `handoff` is the engineer and the block comment is auto-posted, as usual.)
+
 Never call `security_review` more than once. Never send more than one message.
 RiskAgent handle: "%s". On-call engineer: "%s".""" % (_RISK, _ENGINEER)
     + TOOL_DISCIPLINE
