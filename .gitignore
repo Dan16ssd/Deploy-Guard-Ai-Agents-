@@ -24,5 +24,6 @@ Thumbs.db
 .idea/
 .vscode/
 
-# Private demo notes — never commit/push
+# Private demo / submission notes — never commit/push
 script.md
+submission.md
