@@ -143,3 +143,13 @@ ARCHITECTURE.md     full pipeline + topology diagrams
 ✅ **Live and end-to-end automated** — webhook + five agents deployed on Railway; PRs auto-trigger the chain; the security block and audit report are deterministic. See **[current-state.md](current-state.md)** for the detailed log and **[ARCHITECTURE.md](ARCHITECTURE.md)** for the design.
 
 *Single-token demo today; multi-tenant review across arbitrary repositories is the production path via a GitHub App.*
+
+---
+
+## Team
+
+- **Dan16ssd** — [@Dan16ssd](https://github.com/Dan16ssd)
+- **KRIT** — [@thavisoukdouangphachanh-boop](https://github.com/thavisoukdouangphachanh-boop)
+- **MichelBLV64** — [@MichelBLV64](https://github.com/MichelBLV64)
+
+Built for the Band of Agents Hackathon (Track 2).
