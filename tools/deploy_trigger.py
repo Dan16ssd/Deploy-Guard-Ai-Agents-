@@ -30,25 +30,28 @@ def trigger_deployment(
 
     Returns: {"success": bool, "run_id": int, "run_url": str, "status": str, "error": str}
     """
-    from github import Github, GithubException
+    from github import Github
 
     token = os.environ["GITHUB_TOKEN"]
-    target_repo = _normalize_repo(repo or os.environ["TARGET_REPO"])
+    target_repo = _normalize_repo(repo or os.environ.get("TARGET_REPO", ""))
     wf_file = workflow_file or os.environ.get("DEPLOY_WORKFLOW_FILE", "deploy.yml")
 
+    # Resolve get_repo + dispatch together. get_repo 404s if TARGET_REPO/token are wrong, and
+    # if that raises here it CRASHES the agent's turn (message permanently failed → the chain
+    # dies at Deploy). A tool must NEVER raise inside the Band adapter — catch everything and
+    # return a structured FAILED so DeployAgent can still hand off to ReportAgent.
     g = Github(token)
-    r = g.get_repo(target_repo)
-
     try:
+        r = g.get_repo(target_repo)
         wf = r.get_workflow(wf_file)
         wf.create_dispatch(ref=ref, inputs={})
-    except GithubException as exc:
+    except Exception as exc:  # noqa: BLE001 - never crash the agent
         return {
             "success": False,
             "run_id": None,
             "run_url": "",
             "status": "FAILED",
-            "error": str(exc),
+            "error": f"{type(exc).__name__}: {exc}"[:200],
         }
 
     # Give Actions a moment to register the run
