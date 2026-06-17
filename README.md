@@ -148,7 +148,7 @@ ARCHITECTURE.md     full pipeline + topology diagrams
 
 ## Team
 
-- **Dan16ssd** — [@Dan16ssd](https://github.com/Dan16ssd)
+- **Dan16ssd** — Project Leader — [@Dan16ssd](https://github.com/Dan16ssd)
 - **KRIT** — [@thavisoukdouangphachanh-boop](https://github.com/thavisoukdouangphachanh-boop)
 - **MichelBLV64** — [@MichelBLV64](https://github.com/MichelBLV64)
 
