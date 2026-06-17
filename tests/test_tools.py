@@ -57,6 +57,7 @@ def test_security_review_blocks_and_autoposts(monkeypatch):
     import os
 
     os.environ.setdefault("BAND_USERNAME", "danny.ssd7")
+    monkeypatch.setenv("TARGET_REPO", "")  # keep the test offline/hermetic (blocks load_dotenv re-inject)
     import tools.github_api as gh
     from langchain_core.tools import tool
 
@@ -88,6 +89,7 @@ def test_security_review_clean_routes_to_risk(monkeypatch):
     import os
 
     os.environ.setdefault("BAND_USERNAME", "danny.ssd7")
+    monkeypatch.setenv("TARGET_REPO", "")  # keep the test offline/hermetic (blocks load_dotenv re-inject)
     import tools.github_api as gh
     from langchain_core.tools import tool
 

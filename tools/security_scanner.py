@@ -166,18 +166,22 @@ def security_review(repo: str, pr_number: int) -> dict:
     the on-call engineer on BLOCK, RiskAgent otherwise.
     """
     from shared.band_handles import agent_handle, engineer_handle
-    from tools.github_api import get_pr_diff, post_pr_comment
+    from tools.github_api import _resolve_target, get_pr_diff, post_pr_comment
 
+    # Snap placeholder/garbled identifiers to the real guarded PR before doing anything.
+    repo, pr_number = _resolve_target(repo, pr_number)
     diff = get_pr_diff.invoke({"repo": repo, "pr_number": pr_number})
     if isinstance(diff, str) and diff.startswith("ERROR"):
-        # Diff fetch failed — fail safe: no findings, continue the chain to RiskAgent.
+        # Could not obtain a diff even after fallback. FAIL CLOSED: never wave a PR through
+        # when we couldn't actually inspect it — escalate to a human for manual review.
         return {
-            "verdict": Verdict.PASS.value,
-            "max_severity": Severity.LOW.value,
+            "verdict": Verdict.ESCALATE.value,
+            "max_severity": "UNKNOWN",
             "findings": [],
             "comment_url": "",
-            "summary": f"Could not fetch diff ({diff[:120]}); proceeding with no findings.",
-            "handoff": agent_handle("RiskAgent"),
+            "summary": f"Could not fetch the diff ({diff[:120]}). Escalating for MANUAL review "
+            f"— a PR was NOT auto-approved.",
+            "handoff": engineer_handle(),
         }
 
     findings = scan_diff_regex(diff)
@@ -193,7 +197,8 @@ def security_review(repo: str, pr_number: int) -> dict:
     handoff = engineer_handle() if verdict == Verdict.BLOCK else agent_handle("RiskAgent")
     n = len(findings)
     summary = (
-        f"verdict={verdict.value} max_severity={max_sev.value} findings={n}"
+        f"verdict={verdict.value} max_severity={max_sev.value} findings={n} "
+        f"on {repo}#{pr_number}"
         + (f" — posted block comment: {comment_url}" if comment_url else "")
     )
     return {

@@ -25,10 +25,52 @@ def _err(exc: Exception) -> str:
     return f"{type(exc).__name__}: {exc}"[:300]
 
 
+def _normalize_repo(value: str) -> str:
+    v = (value or "").strip().rstrip("/")
+    for prefix in ("https://github.com/", "http://github.com/", "git@github.com:"):
+        if v.startswith(prefix):
+            v = v[len(prefix) :]
+            break
+    return v[:-4] if v.endswith(".git") else v
+
+
+def _latest_open_pr(repo: str) -> int | None:
+    try:
+        prs = list(
+            _gh().get_repo(repo).get_pulls(state="open", sort="created", direction="desc")
+        )
+        return prs[0].number if prs else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _resolve_target(repo: str, pr_number: Any) -> tuple[str, int]:
+    """Self-heal placeholder identifiers to the real guarded repo + its open PR.
+
+    The chain's small models sometimes hand GitHub tools placeholder args (the classic
+    `example/repo` / `123`) instead of the real values from the message — which 404s and,
+    for a security gate, must never let a PR through unreviewed. When `TARGET_REPO` is set
+    (single-repo deployment) and the supplied repo isn't it, we snap to `TARGET_REPO` and
+    its most recent OPEN pull request. A correctly-supplied repo+PR is trusted as-is.
+    """
+    try:
+        pr_int = int(pr_number)
+    except (TypeError, ValueError):
+        pr_int = 0
+    target = _normalize_repo(os.environ.get("TARGET_REPO", ""))
+    if not target:
+        return _normalize_repo(repo), pr_int
+    if _normalize_repo(repo) == target and pr_int > 0:
+        return target, pr_int
+    real_pr = _latest_open_pr(target)
+    return target, (real_pr if real_pr else pr_int)
+
+
 @tool
 def get_pr_metadata(repo: str, pr_number: int) -> dict:
     """Return PR metadata: title, author, branches, additions, deletions, changed files."""
     try:
+        repo, pr_number = _resolve_target(repo, pr_number)
         pr = _gh().get_repo(repo).get_pull(int(pr_number))
         return {
             "title": pr.title,
@@ -54,6 +96,7 @@ def get_pr_diff(repo: str, pr_number: int) -> str:
 
     try:
         token = os.environ["GITHUB_TOKEN"]
+        repo, pr_number = _resolve_target(repo, pr_number)
         pr = _gh().get_repo(repo).get_pull(int(pr_number))
         resp = httpx.get(
             pr.url,
@@ -74,6 +117,7 @@ def get_pr_diff(repo: str, pr_number: int) -> str:
 def get_pr_files(repo: str, pr_number: int) -> list:
     """List files changed in a PR with patch content."""
     try:
+        repo, pr_number = _resolve_target(repo, pr_number)
         pr = _gh().get_repo(repo).get_pull(int(pr_number))
         return [
             {
@@ -93,6 +137,7 @@ def get_pr_files(repo: str, pr_number: int) -> list:
 def post_pr_comment(repo: str, pr_number: int, body: str) -> str:
     """Post a comment on a GitHub pull request. Returns the comment URL."""
     try:
+        repo, pr_number = _resolve_target(repo, pr_number)
         pr = _gh().get_repo(repo).get_pull(int(pr_number))
         comment = pr.create_issue_comment(body)
         return comment.html_url
