@@ -40,6 +40,36 @@ def resolve_credentials(agent_key: str) -> tuple[str, str]:
     return _require_env(spec["id_env"]), _require_env(spec["key_env"])
 
 
+def _resolve_api_key(provider: dict[str, Any], agent_key: str) -> str:
+    """Pick the provider API key for an agent, spreading agents across a key pool if given.
+
+    The chain makes one LLM call per agent in quick succession; on a small provider tier a
+    single key's concurrency/rate budget gets hit (429) and the chain stalls. If several keys
+    are available, give each agent a different one so no single key is hit twice per run.
+
+    Precedence (per agent, falls back gracefully):
+      1. `<API_KEY_ENV>_<AGENT>`        — explicit per-agent override (e.g. FEATHERLESS_API_KEY_SCAN)
+      2. `<API_KEY_ENV>S` (comma list)  — a pool (e.g. FEATHERLESS_API_KEYS=k1,k2,k3) assigned
+                                          round-robin by the agent's position in the config
+      3. `<API_KEY_ENV>`                — the single shared key (original behavior)
+    """
+    base_env = provider["api_key_env"]  # e.g. FEATHERLESS_API_KEY
+
+    override = os.environ.get(f"{base_env}_{agent_key.upper()}")
+    if override:
+        return override
+
+    pool = [
+        k.strip() for k in os.environ.get(f"{base_env}S", "").split(",") if k.strip()
+    ]
+    if pool:
+        names = list(_config()["agents"].keys())
+        idx = names.index(agent_key) if agent_key in names else 0
+        return pool[idx % len(pool)]
+
+    return _require_env(base_env)
+
+
 def build_llm(agent_key: str) -> Any:
     """Construct the ChatOpenAI client for the given agent.
 
@@ -55,7 +85,7 @@ def build_llm(agent_key: str) -> Any:
     provider = cfg["providers"][provider_name]
 
     base_url = _require_env(provider["base_url_env"])
-    api_key = _require_env(provider["api_key_env"])
+    api_key = _resolve_api_key(provider, agent_key)
 
     return ChatOpenAI(
         model=spec["model"],

@@ -337,3 +337,28 @@ def test_webhook_verifier_rejects_bad_signature():
     from webhook.verifier import verify_signature
 
     assert verify_signature(b"body", "sha256=badhash") is False
+
+
+# ── llm_factory: multi-key Featherless ────────────────────────────────────────
+
+
+def test_featherless_key_pool_round_robin(monkeypatch):
+    """A key pool spreads agents across keys so no single key is hit twice per run."""
+    from shared.llm_factory import _resolve_api_key
+
+    provider = {"api_key_env": "FEATHERLESS_API_KEY"}
+    monkeypatch.delenv("FEATHERLESS_API_KEY_SCAN", raising=False)
+    monkeypatch.setenv("FEATHERLESS_API_KEYS", "k1,k2,k3")
+    # config agent order: scan, security, risk, deploy, report
+    assert _resolve_api_key(provider, "scan") == "k1"
+    assert _resolve_api_key(provider, "security") == "k2"
+    assert _resolve_api_key(provider, "risk") == "k3"
+    assert _resolve_api_key(provider, "deploy") == "k1"  # wraps
+
+
+def test_featherless_per_agent_override(monkeypatch):
+    from shared.llm_factory import _resolve_api_key
+
+    provider = {"api_key_env": "FEATHERLESS_API_KEY"}
+    monkeypatch.setenv("FEATHERLESS_API_KEY_SCAN", "special")
+    assert _resolve_api_key(provider, "scan") == "special"
