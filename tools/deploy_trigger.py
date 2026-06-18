@@ -33,7 +33,10 @@ def trigger_deployment(
     from github import Github
 
     token = os.environ["GITHUB_TOKEN"]
-    target_repo = _normalize_repo(repo or os.environ.get("TARGET_REPO", ""))
+    # The deploy target is FIXED by TARGET_REPO. Prefer it over any `repo` the model passes —
+    # DeployAgent's small model sometimes hands a wrong/hallucinated repo here (e.g. the head
+    # branch or a stale name), which 404s. Env wins; the model arg is only a fallback.
+    target_repo = _normalize_repo(os.environ.get("TARGET_REPO") or repo or "")
     wf_file = workflow_file or os.environ.get("DEPLOY_WORKFLOW_FILE", "deploy.yml")
 
     # Resolve get_repo + dispatch together. get_repo 404s if TARGET_REPO/token are wrong, and
